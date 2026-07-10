@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 import importlib
 import os
+import re
+import shutil
 import subprocess
 import sys
 import time
@@ -24,14 +26,18 @@ OPTIONAL_MODULES = [
     "diag_port_scan",
     "diag_whois",
     "diag_bandwidth",
+    "diag_banner_grab",
     "core_mac_lookup",
+    "diag_ct_recon",
     "diag_subnet",
     "diag_dashboard",
     "diag_ssl",
     "diag_tls_inspector",
     "diag_http_recon",
+    "diag_http_capture",
     "diag_http_fingerprint",
     "diag_security_headers",
+    "diag_subdomain_recon",
     "diag_local_audit",
     "diag_firewall_audit",
 ]
@@ -42,7 +48,10 @@ G, R, C, Y, RESET = "\033[92m", "\033[91m", "\033[96m", "\033[93m", "\033[0m"
 APP_TITLE = "CYBERSEC RECON CONSOLE"
 APP_SUBTITLE = "macOS Security Operations Toolkit"
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FRAME_WIDTH = 70
+MIN_LAYOUT_WIDTH = 80
+MAX_LAYOUT_WIDTH = 160
+MENU_GAP = 4
+ANSI_PATTERN = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def load_optional_modules():
@@ -81,7 +90,8 @@ load_optional_modules()
 
 
 def colorize_state(value):
-    return f"{G}{value}{RESET}" if value in ("READY", "UP", "macOS") else f"{R}{value}{RESET}"
+    normalized = str(value).strip()
+    return f"{G}{value}{RESET}" if normalized in ("READY", "UP", "macOS") else f"{R}{value}{RESET}"
 
 
 def truncate_text(value, width):
@@ -93,31 +103,56 @@ def truncate_text(value, width):
     return value[: width - 2] + ".."
 
 
+def visible_length(value):
+    return len(ANSI_PATTERN.sub("", str(value)))
+
+
+def pad_ansi(value, width):
+    visible = visible_length(value)
+    if visible >= width:
+        return value
+    return value + (" " * (width - visible))
+
+
 def state_cell(value, width=8):
     label = truncate_text(value, width).ljust(width)
     return colorize_state(label)
 
 
 def frame_line(content="", align="left", accent=None):
+    frame_width = get_frame_width()
     if align == "center":
-        rendered = content.center(FRAME_WIDTH)
+        rendered = content.center(frame_width)
     elif align == "right":
-        rendered = content.rjust(FRAME_WIDTH)
+        rendered = content.rjust(frame_width)
     else:
-        rendered = content.ljust(FRAME_WIDTH)
+        rendered = content.ljust(frame_width)
     if accent:
         rendered = f"{accent}{rendered}{RESET}"
     return f"{C}║{RESET}{rendered}{C}║{RESET}"
 
 
+def get_terminal_width():
+    return shutil.get_terminal_size((120, 40)).columns
+
+
+def get_layout_width():
+    return max(MIN_LAYOUT_WIDTH, min(MAX_LAYOUT_WIDTH, get_terminal_width()))
+
+
+def get_frame_width():
+    return get_layout_width() - 2
+
+
 def print_header():
-    print(f"{C}╔{'═' * FRAME_WIDTH}╗{RESET}")
+    frame_width = get_frame_width()
+    print(f"{C}╔{'═' * frame_width}╗{RESET}")
     print(frame_line(APP_TITLE, align="center", accent=Y))
     print(frame_line(APP_SUBTITLE, align="center"))
-    print(f"{C}╠{'═' * FRAME_WIDTH}╣{RESET}")
+    print(f"{C}╠{'═' * frame_width}╣{RESET}")
     print(frame_line("Runtime: macOS operator station"))
     print(frame_line("Mode: RECON | ENUMERATION | LOCAL AUDIT"))
-    print(f"{C}╚{'═' * FRAME_WIDTH}╝{RESET}")
+    print(f"{C}╚{'═' * frame_width}╝{RESET}")
 
 
 def print_readiness_panel(adapters):
@@ -134,7 +169,18 @@ def print_readiness_panel(adapters):
 
 def print_interface_table(adapters):
     iface_names = sorted(adapters.keys())
-    print(f"\n {C}[ INTERFACES ]{RESET} Select a number to open the interface control panel.")
+    up_entries = [
+        (index, name, adapters[name])
+        for index, name in enumerate(iface_names, 1)
+        if adapters[name].get("status") == "UP"
+    ]
+    hidden_count = len(iface_names) - len(up_entries)
+
+    print(
+        f"\n {C}[ INTERFACES ]{RESET} "
+        f"Showing {G}{len(up_entries)}{RESET}/{G}{len(up_entries)}{RESET} active links. "
+        f"Select a visible number to open interface control."
+    )
     print(f" {Y}{'ID':<4} {'INTERFACE':<16} {'STATE':<8} {'IP':<18} {'LINK'}{RESET}")
     print(f" {C}-----------------------------------------------------------------------{RESET}")
 
@@ -142,8 +188,11 @@ def print_interface_table(adapters):
         print(f" {R}--{RESET}  No network interfaces detected.")
         return iface_names
 
-    for index, name in enumerate(iface_names, 1):
-        info = adapters[name]
+    if not up_entries:
+        print(f" {R}--{RESET}  No active interfaces. Open {G}I{RESET} Interface Census for full interface details.")
+        return iface_names
+
+    for index, name, info in up_entries:
         state = state_cell(info["status"], 8)
         iface_label = truncate_text(name, 16)
         ip_addr = truncate_text(info.get("ip", "---"), 18)
@@ -155,6 +204,9 @@ def print_interface_table(adapters):
             f"{ip_addr:<18} "
             f"{speed}"
         )
+
+    if hidden_count > 0:
+        print(f" {Y}[ INFO ]{RESET} {hidden_count} inactive interfaces hidden. Open {G}I{RESET} Interface Census for full details.")
     return iface_names
 
 
@@ -162,6 +214,36 @@ def print_menu_block(title, entries):
     print(f"\n {C}[ {title} ]{RESET}")
     for key, label in entries:
         print(f" [{G}{key:<2}{RESET}] {label}")
+
+
+def format_menu_block_lines(title, entries, width):
+    inner_width = max(24, width - 2)
+    lines = [pad_ansi(f"{C}[ {title} ]{RESET}", inner_width)]
+    for key, label in entries:
+        prefix = f" [{G}{key:<2}{RESET}] "
+        available = max(8, inner_width - visible_length(prefix))
+        line = f"{prefix}{truncate_text(label, available)}"
+        lines.append(pad_ansi(line, inner_width))
+    return lines
+
+
+def print_menu_columns(blocks):
+    column_width = max(40, (get_layout_width() - MENU_GAP) // 2)
+
+    grouped = [blocks[index:index + 2] for index in range(0, len(blocks), 2)]
+    for pair in grouped:
+        rendered = [format_menu_block_lines(title, entries, column_width) for title, entries in pair]
+        if len(rendered) == 1:
+            rendered.append(["".ljust(column_width - 2)])
+
+        row_height = max(len(rendered[0]), len(rendered[1]))
+        for block_lines in rendered:
+            while len(block_lines) < row_height:
+                block_lines.append(" " * (column_width - 2))
+
+        print("")
+        for left_line, right_line in zip(rendered[0], rendered[1]):
+            print(f" {pad_ansi(left_line, column_width - 2)}{' ' * MENU_GAP}{pad_ansi(right_line, column_width - 2)}")
 
 
 def check_runtime_requirements():
@@ -240,7 +322,9 @@ def build_actions():
     return {
         "a": lambda: run_module_action("diag_system", "run_arp"),
         "b": lambda: run_module_action("diag_bandwidth", "run"),
+        "bg": lambda: run_module_action("diag_banner_grab", "run"),
         "c": lambda: run_module_action("diag_subnet", "run"),
+        "ct": lambda: run_module_action("diag_ct_recon", "run"),
         "d": lambda: run_module_action("diag_dns", "run"),
         "e": lambda: run_module_action("diag_dashboard", "run"),
         "f": lambda: run_module_action("diag_flush", "run"),
@@ -256,9 +340,11 @@ def build_actions():
         "n": lambda: run_module_action("diag_system", "run_netstat"),
         "p": lambda: run_module_action("diag_port_scan", "run"),
         "r": lambda: run_module_action("diag_tracert", "run"),
+        "sd": lambda: run_module_action("diag_subdomain_recon", "run"),
         "t": lambda: run_module_action("diag_ping", "run_menu"),
         "ti": lambda: run_module_action("diag_tls_inspector", "run"),
         "ht": lambda: run_module_action("diag_http_fingerprint", "run"),
+        "hc": lambda: run_module_action("diag_http_capture", "run"),
         "sh": lambda: run_module_action("diag_security_headers", "run"),
         "u": open_network_settings,
         "v": lambda: run_module_action("diag_http_recon", "run"),
@@ -285,31 +371,35 @@ def main():
             print_readiness_panel(adapters)
             print_interface_table(adapters)
 
-            print_menu_block("RECON", [
+            recon_entries = [
                 ("A", "ARP Table - layer 2 and layer 3 neighbors"),
+                ("BG", "Banner Grabber - lightweight service response collection"),
+                ("CT", "CT Recon - certificate transparency hostname discovery"),
                 ("D", "DNS Recon - name resolution and propagation checks"),
                 ("M", "MAC Intelligence - vendor lookup from hardware address"),
                 ("P", "Port Recon - service exposure on a target host"),
                 ("R", "Traceroute - packet path discovery"),
+                ("SD", "Subdomain Recon - passive host discovery for a domain"),
                 ("X", "Domain WHOIS - registration and status records"),
-            ])
+            ]
 
-            print_menu_block("WEB SECURITY", [
+            web_entries = [
+                ("HC", "HTTP Capture - title grab and optional page screenshot"),
                 ("V", "HTTP Surface Recon - headers and web exposure review"),
                 ("HT", "HTTP Tech Fingerprint - stack and platform detection"),
                 ("SH", "Security Headers Audit - score and hardening guidance"),
                 ("TI", "TLS / Certificate Inspector - trust and SAN review"),
                 ("Y", "TLS Deep Audit - certificate and handshake profile"),
-            ])
+            ]
 
-            print_menu_block("TELEMETRY", [
+            telemetry_entries = [
                 ("B", "Bandwidth Telemetry - live interface throughput"),
                 ("E", "Operations Dashboard - real-time host view"),
                 ("G", "GeoIP Footprint - public IP geolocation"),
                 ("T", "ICMP Probe - reachability and latency testing"),
-            ])
+            ]
 
-            print_menu_block("OPERATIONS", [
+            operations_entries = [
                 ("C", "Subnet Calculator - IPv4 network breakdown"),
                 ("F", "DNS Flush - clear resolver cache"),
                 ("FW", "Firewall Audit - pf policy and filter review"),
@@ -322,6 +412,13 @@ def main():
                 ("N", "Session Audit - active sockets and connections"),
                 ("U", "Connection Settings - open macOS network settings"),
                 ("W", "WiFi Audit - preferred networks and local scan"),
+            ]
+
+            print_menu_columns([
+                ("RECON", recon_entries),
+                ("TELEMETRY", telemetry_entries),
+                ("WEB SECURITY", web_entries),
+                ("OPERATIONS", operations_entries),
             ])
 
             print(f"\n [{R}0{RESET}] EXIT CONSOLE")
