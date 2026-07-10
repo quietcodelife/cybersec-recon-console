@@ -28,6 +28,7 @@ OPTIONAL_MODULES = [
     "diag_whois",
     "diag_bandwidth",
     "diag_banner_grab",
+    "diag_asn_recon",
     "core_mac_lookup",
     "diag_ct_recon",
     "diag_subnet",
@@ -40,6 +41,10 @@ OPTIONAL_MODULES = [
     "diag_http_recon",
     "diag_http_capture",
     "diag_http_fingerprint",
+    "diag_robots_recon",
+    "diag_email_security",
+    "diag_directory_exposure",
+    "diag_cookie_security",
     "diag_security_headers",
     "diag_subdomain_recon",
     "diag_local_audit",
@@ -347,6 +352,7 @@ def build_actions():
     return {
         "a": lambda: run_module_action("diag_system", "run_arp"),
         "b": lambda: run_module_action("diag_bandwidth", "run"),
+        "as": lambda: run_module_action("diag_asn_recon", "run"),
         "bg": lambda: run_module_action("diag_banner_grab", "run"),
         "c": lambda: run_module_action("diag_subnet", "run"),
         "ct": lambda: run_module_action("diag_ct_recon", "run"),
@@ -373,7 +379,11 @@ def build_actions():
         "ti": lambda: run_module_action("diag_tls_inspector", "run"),
         "ht": lambda: run_module_action("diag_http_fingerprint", "run"),
         "hc": lambda: run_module_action("diag_http_capture", "run"),
+        "ea": lambda: run_module_action("diag_email_security", "run"),
+        "de": lambda: run_module_action("diag_directory_exposure", "run"),
+        "cs": lambda: run_module_action("diag_cookie_security", "run"),
         "sh": lambda: run_module_action("diag_security_headers", "run"),
+        "rs": lambda: run_module_action("diag_robots_recon", "run"),
         "u": open_network_settings,
         "v": lambda: run_module_action("diag_http_recon", "run"),
         "w": lambda: run_module_action("diag_wifi", "run"),
@@ -408,6 +418,7 @@ def main():
 
             recon_entries = [
                 ("A", "ARP Intelligence - physical and local neighbor mapping"),
+                ("AS", "ASN / BGP Recon - routing ownership and provider profile"),
                 ("BG", "Banner Grabber - lightweight service response collection"),
                 ("CT", "CT Recon - certificate transparency hostname discovery"),
                 ("D", "DNS Recon - resolution and propagation checks"),
@@ -420,9 +431,13 @@ def main():
             ]
 
             web_entries = [
+                ("CS", "Cookie Security Audit - flags, scope and persistence review"),
+                ("DE", "Directory Exposure Recon - common files and panel discovery"),
+                ("EA", "Email Security Audit - SPF, DMARC, MX and DKIM review"),
                 ("HC", "HTTP Capture - title grab and optional page screenshot"),
                 ("V", "HTTP Surface Recon - headers and web exposure review"),
                 ("HT", "HTTP Tech Fingerprint - stack and platform detection"),
+                ("RS", "Robots / Sitemap Recon - crawler directives and index discovery"),
                 ("SH", "Security Headers Audit - score and hardening guidance"),
                 ("TI", "TLS / Certificate Inspector - trust and SAN review"),
                 ("Y", "TLS Deep Audit - certificate and handshake profile"),

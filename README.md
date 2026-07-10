@@ -1,128 +1,156 @@
 # CyberSec Recon Console
 
-CyberSec Recon Console is a terminal-first operations toolkit for cybersecurity practitioners, blue-team operators, and infrastructure analysts. It is designed for practical host triage, network reconnaissance, web-surface review, and day-to-day defensive workflows on Linux and macOS.
+CyberSec Recon Console is a terminal-first toolkit for cybersecurity operators who want fast recon, local validation, and web-facing posture review without leaving the shell. It combines host triage, network visibility, and practical security checks into a single operator console for Linux and macOS.
 
-## Platform Focus
+## Why This Project
 
-- Terminal-first workflow for operators who need speed and clarity
-- Recon, validation, and local security review in a single console
-- Separate Linux and macOS variants with platform-aware tooling
-- Report generation for evidence capture and follow-up analysis
+- built for real terminal workflows instead of dashboard-heavy overhead
+- platform-aware Linux and macOS variants instead of a lowest-common-denominator build
+- focused on practical recon, inspection, and operator follow-up
+- report generation included for evidence capture and repeatable review
 
-## Capability Areas
+## Capability Map
 
-- **Recon and enumeration:** ARP, LAN scan, port scan, WHOIS, MAC vendor lookup
-- **Network diagnostics:** ICMP probe, route trace, DNS recon, DNS benchmark
-- **Telemetry and monitoring:** real-time dashboard, WiFi monitoring, bandwidth telemetry
-- **System operations:** IP profiles, WOL, hosts editing, basic repair actions
-- **Web security review:** HTTP surface recon, technology fingerprinting, security header audit
-- **TLS inspection:** certificate trust review, SAN inspection, handshake profiling
-- **Security review:** local host audit, firewall review, saved WiFi profile inspection, public GeoIP analysis
+### Recon and Enumeration
 
-## Recommended Workflow
+- ARP intelligence and local neighbor mapping
+- ASN / BGP ownership profiling
+- LAN recon and port exposure checks
+- WHOIS and certificate transparency discovery
+- subdomain and MAC vendor intelligence
 
-For web-facing targets, the fastest operator flow is:
+### Web Security
+
+- HTTP surface recon
+- HTTP technology fingerprinting
+- security headers audit
+- cookie security audit
+- directory exposure recon
+- robots and sitemap recon
+- HTTP title capture and optional screenshot collection
+
+### Email and Trust
+
+- SPF, DMARC, MX, and DKIM posture review
+- TLS certificate inspection
+- handshake and trust analysis
+
+### Telemetry and Operations
+
+- bandwidth telemetry
+- operations dashboard
+- DNS benchmark and GeoIP footprinting
+- hosts override review
+- interface census
+- firewall audit
+- local host audit
+
+## Recommended Operator Flows
+
+### Web Posture
 
 1. `V` - `HTTP Surface Recon`
 2. `HT` - `HTTP Tech Fingerprint`
 3. `SH` - `Security Headers Audit`
-4. `TI` - `TLS / Certificate Inspector`
-5. `Y` - `TLS Deep Audit`
+4. `CS` - `Cookie Security Audit`
+5. `DE` - `Directory Exposure Recon`
+6. `TI` - `TLS / Certificate Inspector`
+7. `Y` - `TLS Deep Audit`
 
-This sequence moves from basic exposure and headers, through stack identification, into hardening review and certificate analysis.
+### Exposure Discovery
 
-## Layout
+1. `RS` - `Robots / Sitemap Recon`
+2. `DE` - `Directory Exposure Recon`
+3. `HC` - `HTTP Capture`
 
-- `source_code_linux` - Linux variant
-- `source_code_macos` - macOS variant
+### Infrastructure Ownership
 
-## Linux Setup
+1. `AS` - `ASN / BGP Recon`
+2. `X` - `Domain WHOIS`
+3. `EA` - `Email Security Audit`
 
-The Linux build expects the environment to be prepared before first launch.
+## Repository Layout
 
-1. Clone the `CyberSec Recon Console` repository.
-2. Prepare Python dependencies:
+- `source_code_linux` - Linux console and Linux-native modules
+- `source_code_macos` - macOS console and macOS-native modules
+- `docs/validation-checklist.md` - live validation plan for module testing
+- `CONTRIBUTING.md` - contribution expectations and development notes
+
+## Quick Start
+
+Prepare Python once for both platforms:
 
 ```bash
 bash setup_python_env.sh
 source .venv/bin/activate
 ```
 
-If you use `fish`, activation looks like this:
+If you use `fish`:
 
 ```fish
 source .venv/bin/activate.fish
 ```
 
-3. Install the platform packages required by the full Linux module set:
+### Linux
+
+Install Linux system dependencies:
 
 ```bash
 bash bootstrap_linux.sh
 ```
 
-4. Launch the Linux console:
+Start the Linux console:
 
 ```bash
 bash run_linux.sh
 ```
 
-### Setup Files
+### macOS
 
-- `requirements.txt` - Python dependencies
-- `requirements-linux-apt.txt` - system packages for Debian/Ubuntu
-- `setup_python_env.sh` - prepares the virtualenv and runs `pip install -r requirements.txt`
-- `bootstrap_linux.sh` - automated dependency installation
-- `run_linux.sh` - starts the Linux version without manual venv activation
-
-If the environment is incomplete, the console stops at startup and reports the missing requirements.
-
-## macOS Setup
-
-The macOS build uses the same Python environment, with a dedicated bootstrap path for macOS-native tools.
-
-1. Clone the `CyberSec Recon Console` repository.
-2. Prepare Python dependencies:
-
-```bash
-bash setup_python_env.sh
-source .venv/bin/activate
-```
-
-If you use `fish`, activation looks like this:
-
-```fish
-source .venv/bin/activate.fish
-```
-
-3. Install the full macOS toolset:
+Install macOS system dependencies:
 
 ```bash
 bash bootstrap_macos.sh
 ```
 
-4. Launch the macOS console:
+Start the macOS console:
 
 ```bash
 bash run_macos.sh
 ```
 
-### macOS Setup Files
+## Setup Files
 
-- `requirements-macos-brew.txt` - Homebrew packages
-- `bootstrap_macos.sh` - automated dependency installation for macOS
-- `run_macos.sh` - starts the macOS version without manual venv activation
+- `requirements.txt` - shared Python dependencies
+- `requirements-linux-apt.txt` - Linux system packages
+- `requirements-macos-brew.txt` - macOS Homebrew packages
+- `setup_python_env.sh` - virtualenv bootstrap and Python package install
+- `bootstrap_linux.sh` - Linux package bootstrap
+- `bootstrap_macos.sh` - macOS package bootstrap
+- `run_linux.sh` - Linux launcher
+- `run_macos.sh` - macOS launcher
 
 ## Operating Notes
 
-- Linux and macOS builds are intentionally separate so each variant can use native system tooling.
-- The bootstrap scripts prepare dependencies before runtime and reduce first-run failure cases.
-- Reports generated by modules can be used as working artifacts during triage or internal review.
+- Linux and macOS are intentionally maintained as separate runtime variants.
+- If required dependencies are missing, startup validation stops execution early and explains what is unavailable.
+- Reports generated by modules are meant to serve as working artifacts for triage, documentation, and follow-up analysis.
+- Several recon modules rely on live network access, so final validation should always be done on the operator workstation.
 
-## Direction
+## Validation
 
-- refine platform parity where it improves operator value
-- continue hardening the web-security workflow
-- expand reporting and evidence quality for cybersecurity operations
+Before calling a release candidate ready, run through:
+
+- `docs/validation-checklist.md`
+
+This is the working checklist for live module verification, UI review, and platform sanity checks.
+
+## Roadmap Direction
+
+- continue refining the web-security workflow
+- improve platform parity where it adds operator value
+- strengthen reporting and evidence quality
+- expand infrastructure and exposure analysis without sacrificing usability
 
 ## License
 
