@@ -1,0 +1,15 @@
+iproute2
+iputils-ping
+iputils-tracepath
+dnsutils
+network-manager
+network-manager-gnome
+wireless-tools
+ethtool
+pciutils
+usbutils
+nftables
+iptables
+ufw
+net-tools
+nano

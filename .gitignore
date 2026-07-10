@@ -1,0 +1,13 @@
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+
+source_code_linux/__pycache__/
+source_code_macos/__pycache__/
+
+source_code_linux/Reports/
+source_code_macos/Reports/
+
+source_code_linux/core_data/
+source_code_macos/core_data/
