@@ -27,24 +27,37 @@ def parse_ports(raw_value):
     return ports
 
 
-def grab_banner(host, port):
+def request_payload(port):
+    if port in (80, 443, 8080, 8443):
+        return b"HEAD / HTTP/1.0\r\nHost: test\r\n\r\n"
+    return b"\r\n"
+
+
+def read_plain_banner(host, port):
     with socket.create_connection((host, port), timeout=3) as sock:
         sock.settimeout(3)
-        if port in TLS_PORTS:
-            context = ssl.create_default_context()
-            try:
-                with context.wrap_socket(sock, server_hostname=host) as tls_sock:
-                    tls_sock.sendall(b"HEAD / HTTP/1.0\r\nHost: test\r\n\r\n")
-                    data = tls_sock.recv(512)
-            except ssl.SSLError:
-                sock.sendall(b"\r\n")
-                data = sock.recv(512)
-        else:
-            if port in (80, 8080):
-                sock.sendall(b"HEAD / HTTP/1.0\r\nHost: test\r\n\r\n")
-            else:
-                sock.sendall(b"\r\n")
-            data = sock.recv(512)
+        sock.sendall(request_payload(port))
+        return sock.recv(512)
+
+
+def read_tls_banner(host, port):
+    context = ssl.create_default_context()
+    with socket.create_connection((host, port), timeout=3) as sock:
+        sock.settimeout(3)
+        with context.wrap_socket(sock, server_hostname=host) as tls_sock:
+            tls_sock.settimeout(3)
+            tls_sock.sendall(request_payload(port))
+            return tls_sock.recv(512)
+
+
+def grab_banner(host, port):
+    if port in TLS_PORTS:
+        try:
+            data = read_tls_banner(host, port)
+        except ssl.SSLError:
+            data = read_plain_banner(host, port)
+    else:
+        data = read_plain_banner(host, port)
     return data.decode("utf-8", errors="replace").strip() or "No banner captured"
 
 
