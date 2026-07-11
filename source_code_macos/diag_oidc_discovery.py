@@ -13,6 +13,13 @@ G, R, C, Y, RESET = "\033[92m", "\033[91m", "\033[96m", "\033[93m", "\033[0m"
 USER_AGENT = "CyberSec-Recon-Console/1.0"
 
 
+class OidcDiscoveryError(ValueError):
+    def __init__(self, message, attempts=None, tls_notes=None):
+        super().__init__(message)
+        self.attempts = attempts or []
+        self.tls_notes = tls_notes or []
+
+
 def normalize_target(raw_target):
     raw_target = (raw_target or "").strip()
     if not raw_target:
@@ -120,7 +127,11 @@ def collect_discovery(parsed_target):
         except Exception as exc:
             attempts.append((candidate["label"], candidate["url"], "ERROR", str(exc)))
 
-    raise ValueError("No OIDC or OAuth discovery document could be collected from the tested well-known endpoints.")
+    raise OidcDiscoveryError(
+        "No OIDC or OAuth discovery document could be collected from the tested well-known endpoints.",
+        attempts=attempts,
+        tls_notes=tls_notes,
+    )
 
 
 def summarize_values(values, limit=6):
@@ -345,6 +356,31 @@ def run():
             report = build_report(parsed_target, result, score, verdict, findings, recommendations, attempts)
             if input("\n [?] Save results to file? (y/n): ").strip().lower() == "y":
                 core_report.save(report, "OAuth_OIDC_Discovery_Recon")
+        except OidcDiscoveryError as exc:
+            print(f"\n {Y}>>> DISCOVERY SUMMARY{RESET}")
+            print(" ----------------------------------------------------------------")
+            print(f" INITIAL URL:    {parsed_target.geturl()}")
+            print(" STATUS:         No discovery document found")
+            print(" ----------------------------------------------------------------")
+            for note in exc.tls_notes:
+                print(f" {Y}[TLS NOTICE]{RESET} {note}")
+                print(f" {Y}[TLS NOTICE]{RESET} Metadata discovery continued in unverified certificate mode.")
+
+            print(f"\n {Y}FINDINGS:{RESET}")
+            print("  - No OIDC or OAuth well-known metadata was discovered for this target.")
+            print("  - This is normal for standard sites that do not expose identity provider or authorization server metadata.")
+
+            print(f"\n {Y}ATTEMPTED ENDPOINTS:{RESET}")
+            if exc.attempts:
+                for label, url, status, reason in exc.attempts:
+                    reason_suffix = f" | {reason}" if reason else ""
+                    print(f"  - [{status}] {label}: {url}{reason_suffix}")
+            else:
+                print("  - No candidate endpoints were generated.")
+
+            print(f"\n {Y}NEXT STEPS:{RESET}")
+            print("  - If this application uses federated login, test the actual identity provider domain instead of the public website")
+            print("  - If you know the provider, try the issuer URL directly")
         except Exception as exc:
             print(f"\n {R}[ERROR]{RESET} {exc}")
 
