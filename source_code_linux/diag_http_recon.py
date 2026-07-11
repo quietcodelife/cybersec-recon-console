@@ -152,7 +152,7 @@ def run():
             if missing:
                 print(f"\n {R}MISSING HEADERS:{RESET} {', '.join(missing)}")
 
-            print(f"\n {Y}PREVIEW ODPOWIEDZI:{RESET}")
+            print(f"\n {Y}RESPONSE PREVIEW:{RESET}")
             preview = result["body_preview"].strip()
             if preview:
                 print(preview[:400])
