@@ -9,6 +9,7 @@ This checklist is intended for live validation on an operator workstation after 
 - Confirm the console opens without missing-module errors
 - Confirm the runtime panel shows the expected module count
 - Confirm the active interface table renders cleanly in a full-screen terminal
+- Confirm active interface counts are shown as `active / total`
 
 ## Web Security Workflow
 
@@ -21,6 +22,7 @@ Use one controlled domain and one public-known domain for comparison.
 - `SH` Security Headers Audit
 - `TI` TLS / Certificate Inspector
 - `Y` TLS Deep Audit
+- `CR` CORS Misconfiguration Review
 
 Validate:
 
@@ -35,6 +37,7 @@ Validate:
 - `RS` Robots / Sitemap Recon
 - `DE` Directory Exposure Recon
 - `CS` Cookie Security Audit
+- `CE` Client Exposure Recon
 
 Validate:
 
@@ -42,6 +45,7 @@ Validate:
 - Screenshot capture behaves correctly when a renderer is present or absent
 - Standard path exposure findings are readable and not overly noisy
 - Cookie parsing handles multiple `Set-Cookie` headers correctly
+- public JavaScript sampling stays readable and useful
 
 ### Email and Ownership
 
@@ -54,6 +58,18 @@ Validate:
 - DKIM selector detection is reasonable for known targets
 - ASN, owner, and provider hints match the visible infrastructure
 - Report output is useful for follow-up analysis
+
+### Identity and Metadata
+
+- `OI` OAuth / OIDC Discovery Recon
+- `JK` JWKS Keyset Inspector
+- `JT` JWT / Auth Token Inspector
+
+Validate:
+
+- missing discovery endpoints fail clearly instead of noisily
+- JWKS collection handles absent well-known metadata cleanly
+- JWT inspection is readable even without a live production token
 
 ## Platform-Specific Checks
 
@@ -88,9 +104,11 @@ Validate:
 - Confirm the header width matches the body layout
 - Confirm long module labels do not create chaotic spacing
 - Confirm the `WEB SECURITY` section remains readable after recent additions
+- Confirm `TELEMETRY` still looks balanced after the latest module additions
 
 ## Final Review
 
 - Save at least one report from each major category
 - Confirm `Reports/` output stays organized
 - Capture one screenshot of the final UI for future README use
+- Remove local reports and Finder metadata before pushing repository changes

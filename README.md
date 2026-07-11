@@ -1,84 +1,112 @@
 # CyberSec Recon Console
 
-CyberSec Recon Console is a terminal-first toolkit for cybersecurity operators who want fast recon, local validation, and web-facing posture review without leaving the shell. It combines host triage, network visibility, and practical security checks into a single operator console for Linux and macOS.
+CyberSec Recon Console is a terminal-first toolkit for cybersecurity operators who need fast reconnaissance, local host validation, and web-facing posture review without leaving the shell. It combines practical recon, visibility, and reporting workflows into a single operator console for Linux and macOS.
 
-## Why This Project
+## Why This Project Exists
 
 - built for real terminal workflows instead of dashboard-heavy overhead
-- platform-aware Linux and macOS variants instead of a lowest-common-denominator build
-- focused on practical recon, inspection, and operator follow-up
+- separate Linux and macOS runtime variants rather than a diluted cross-platform compromise
+- focused on useful operator actions, not filler modules
 - report generation included for evidence capture and repeatable review
+
+## Platform Model
+
+- `source_code_linux` contains the Linux console and Linux-native modules
+- `source_code_macos` contains the macOS console and macOS-native modules
+- both variants share the same operational direction, but each keeps platform-specific behavior where it matters
 
 ## Capability Map
 
 ### Recon and Enumeration
 
-- ARP intelligence and local neighbor mapping
+- ARP neighbor mapping and local link visibility
+- DNS recon and propagation checks
+- MAC vendor intelligence
+- port recon and banner grabbing
+- traceroute and ICMP validation
+- WHOIS and RDAP review
+- certificate transparency recon
+- subdomain discovery
 - ASN / BGP ownership profiling
-- LAN recon and port exposure checks
-- WHOIS and certificate transparency discovery
-- subdomain and MAC vendor intelligence
 
 ### Web Security
 
 - HTTP surface recon
 - HTTP technology fingerprinting
+- HTTP title capture and optional screenshot collection
 - security headers audit
 - cookie security audit
+- CORS posture review
 - directory exposure recon
 - robots and sitemap recon
-- HTTP title capture and optional screenshot collection
+- client exposure recon for public JavaScript and endpoint hints
+- OAuth / OIDC discovery review
+- JWKS keyset inspection
+- JWT token inspection
 
 ### Email and Trust
 
 - SPF, DMARC, MX, and DKIM posture review
 - TLS certificate inspection
-- handshake and trust analysis
+- TLS handshake and trust analysis
 
 ### Telemetry and Operations
 
 - bandwidth telemetry
+- HTTP reachability monitoring
+- interface health snapshot
+- DNS telemetry and resolver comparison
+- GeoIP footprinting
 - operations dashboard
-- DNS benchmark and GeoIP footprinting
-- hosts override review
 - interface census
+- hosts override review
 - firewall audit
 - local host audit
+- hardware inventory
 
 ## Recommended Operator Flows
 
-### Web Posture
+### Web Posture Review
 
 1. `V` - `HTTP Surface Recon`
 2. `HT` - `HTTP Tech Fingerprint`
 3. `SH` - `Security Headers Audit`
 4. `CS` - `Cookie Security Audit`
-5. `DE` - `Directory Exposure Recon`
-6. `TI` - `TLS / Certificate Inspector`
-7. `Y` - `TLS Deep Audit`
+5. `CR` - `CORS Misconfiguration Review`
+6. `DE` - `Directory Exposure Recon`
+7. `TI` - `TLS / Certificate Inspector`
+8. `Y` - `TLS Deep Audit`
 
 ### Exposure Discovery
 
 1. `RS` - `Robots / Sitemap Recon`
 2. `DE` - `Directory Exposure Recon`
-3. `HC` - `HTTP Capture`
+3. `CE` - `Client Exposure Recon`
+4. `HC` - `HTTP Capture`
+
+### Identity and Application Discovery
+
+1. `OI` - `OAuth / OIDC Discovery Recon`
+2. `JK` - `JWKS Keyset Inspector`
+3. `JT` - `JWT / Auth Token Inspector`
 
 ### Infrastructure Ownership
 
 1. `AS` - `ASN / BGP Recon`
 2. `X` - `Domain WHOIS`
 3. `EA` - `Email Security Audit`
+4. `CT` - `CT Recon`
 
-## Repository Layout
+### Telemetry and Stability
 
-- `source_code_linux` - Linux console and Linux-native modules
-- `source_code_macos` - macOS console and macOS-native modules
-- `docs/validation-checklist.md` - live validation plan for module testing
-- `CONTRIBUTING.md` - contribution expectations and development notes
+1. `IH` - `Interface Health Snapshot`
+2. `DT` - `DNS Telemetry`
+3. `HM` - `HTTP Reachability Monitor`
+4. `B` - `Bandwidth Telemetry`
 
 ## Quick Start
 
-Prepare Python once for both platforms:
+Prepare Python once for either platform:
 
 ```bash
 bash setup_python_env.sh
@@ -130,12 +158,20 @@ bash run_macos.sh
 - `run_linux.sh` - Linux launcher
 - `run_macos.sh` - macOS launcher
 
+## Repository Layout
+
+- `source_code_linux` - Linux runtime and Linux-native modules
+- `source_code_macos` - macOS runtime and macOS-native modules
+- `docs/validation-checklist.md` - live validation plan for operator-side testing
+- `CONTRIBUTING.md` - contribution notes and project expectations
+
 ## Operating Notes
 
 - Linux and macOS are intentionally maintained as separate runtime variants.
-- If required dependencies are missing, startup validation stops execution early and explains what is unavailable.
-- Reports generated by modules are meant to serve as working artifacts for triage, documentation, and follow-up analysis.
-- Several recon modules rely on live network access, so final validation should always be done on the operator workstation.
+- Startup validation stops execution early when required dependencies are missing and explains how to prepare the environment.
+- Reports generated by modules are working artifacts for triage, documentation, and follow-up analysis.
+- Several modules depend on live network reachability, DNS resolution, and target behavior, so final validation should always be performed from the operator workstation.
+- Local runtime data and generated reports are not meant to be committed to the repository.
 
 ## Validation
 
@@ -143,14 +179,28 @@ Before calling a release candidate ready, run through:
 
 - `docs/validation-checklist.md`
 
-This is the working checklist for live module verification, UI review, and platform sanity checks.
+This checklist covers live module verification, UI review, and platform sanity checks.
+
+## Feedback and Support
+
+If you notice a broken workflow, inconsistent platform behavior, or a module that needs refinement, open a GitHub Issue with:
+
+- the target platform
+- the module shortcut and module name
+- the observed behavior
+- the expected behavior
+- any relevant terminal output or report excerpt
+
+If you want to propose a new operator-focused module, open an Issue and describe the use case first. Practical, real-world workflows are preferred over feature volume.
+
+For sensitive findings, security-impacting defects, or cases that should not be discussed publicly, use a private contact channel defined by the repository owner instead of opening a public issue.
 
 ## Roadmap Direction
 
-- continue refining the web-security workflow
-- improve platform parity where it adds operator value
-- strengthen reporting and evidence quality
-- expand infrastructure and exposure analysis without sacrificing usability
+- refine the web security workflow without adding noise
+- keep platform parity where it improves real operator value
+- strengthen evidence quality and report usefulness
+- expand infrastructure and application-layer recon conservatively
 
 ## License
 
