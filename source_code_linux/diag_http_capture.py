@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import html
 import os
 import re
+import ssl
 import subprocess
 import time
 import urllib.error
@@ -32,7 +34,9 @@ def normalize_target(raw_target):
     return parsed
 
 
-def fetch_page(parsed_target):
+def fetch_page(parsed_target, verify_tls=True):
+    ssl_ctx = ssl.create_default_context() if verify_tls else ssl._create_unverified_context()
+    opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ssl_ctx))
     request = urllib.request.Request(
         parsed_target.geturl(),
         headers={
@@ -40,7 +44,7 @@ def fetch_page(parsed_target):
             "Accept": "text/html,application/xhtml+xml,*/*",
         },
     )
-    with urllib.request.urlopen(request, timeout=10) as response:
+    with opener.open(request, timeout=10) as response:
         body = response.read(8192).decode("utf-8", errors="replace")
         final_url = response.geturl()
         status = response.status
@@ -50,6 +54,7 @@ def fetch_page(parsed_target):
         "final_url": final_url,
         "status": status,
         "content_type": content_type,
+        "tls_verified": verify_tls,
     }
 
 
@@ -57,7 +62,7 @@ def extract_title(html_text):
     match = TITLE_PATTERN.search(html_text or "")
     if not match:
         return "No HTML title found"
-    title = re.sub(r"\s+", " ", match.group(1)).strip()
+    title = html.unescape(re.sub(r"\s+", " ", match.group(1)).strip())
     return title or "No HTML title found"
 
 
@@ -105,7 +110,16 @@ def run():
 
         try:
             parsed_target = normalize_target(target)
-            result = fetch_page(parsed_target)
+            tls_note = None
+            try:
+                result = fetch_page(parsed_target, verify_tls=True)
+            except urllib.error.URLError as exc:
+                reason = getattr(exc, "reason", "")
+                if isinstance(reason, ssl.SSLCertVerificationError):
+                    tls_note = f"TLS validation failed: {reason}"
+                    result = fetch_page(parsed_target, verify_tls=False)
+                else:
+                    raise
             title = extract_title(result["body"])
             screenshot_path, screenshot_engine = capture_screenshot(result["final_url"], parsed_target.hostname)
 
@@ -115,6 +129,7 @@ def run():
             print(f" FINAL URL:      {result['final_url']}")
             print(f" STATUS:         {result['status']}")
             print(f" CONTENT-TYPE:   {result['content_type']}")
+            print(f" TLS VERIFY:     {G + 'OK' + RESET if result['tls_verified'] else Y + 'BYPASS / UNVERIFIED' + RESET}")
             print(f" TITLE:          {title}")
             print(
                 f" SCREENSHOT:     "
@@ -122,15 +137,22 @@ def run():
             )
             print(" ----------------------------------------------------------------")
 
+            if tls_note:
+                print(f" {Y}[TLS NOTICE]{RESET} {tls_note}")
+                print(f" {Y}[TLS NOTICE]{RESET} Page capture continued in unverified certificate mode.")
+
             report_lines = [
                 f"HTTP SCREENSHOT / TITLE GRABBER: {parsed_target.geturl()}",
                 f"Final URL: {result['final_url']}",
                 f"Status: {result['status']}",
                 f"Content-Type: {result['content_type']}",
+                f"TLS Verify: {'OK' if result['tls_verified'] else 'BYPASS / UNVERIFIED'}",
                 f"Title: {title}",
                 f"Screenshot Engine: {screenshot_engine or 'Unavailable'}",
                 f"Screenshot Path: {screenshot_path or 'Not captured'}",
             ]
+            if tls_note:
+                report_lines.extend(["", f"TLS Notice: {tls_note}"])
 
             if input("\n [?] Save text report? (y/n): ").strip().lower() == "y":
                 core_report.save("\n".join(report_lines), "HTTP_Capture")
