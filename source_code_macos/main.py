@@ -119,6 +119,56 @@ def pad_ansi(value, width):
     return value + (" " * (width - visible))
 
 
+def render_inventory_table(title, headers, rows):
+    print(f"\n {G}>>> {title}{RESET}")
+    print(" ----------------------------------------------------------------")
+    widths = [len(header) for header in headers]
+    for row in rows:
+        for index, value in enumerate(row):
+            widths[index] = max(widths[index], len(str(value)))
+    widths = [min(width, 28) for width in widths]
+    header_line = " " + " ".join(f"{headers[index]:<{widths[index]}}" for index in range(len(headers)))
+    print(header_line)
+    print(" " + "-" * min(sum(widths) + len(widths) - 1, 96))
+    if not rows:
+        print(" No data.")
+        return
+    for row in rows:
+        print(" " + " ".join(f"{truncate_text(value, widths[index]):<{widths[index]}}" for index, value in enumerate(row)))
+
+
+def parse_macos_network_inventory(output):
+    sections = []
+    current = None
+    current_group = "Network"
+    for raw_line in output.splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if not line.startswith(" "):
+            current_group = stripped.rstrip(":")
+            continue
+        if line.startswith("    ") and stripped.endswith(":") and not line.startswith("      "):
+            if current:
+                sections.append(current)
+            current = {"name": stripped[:-1], "group": current_group, "type": "Unknown", "device": "---", "ipv4": "---"}
+            continue
+        if not current:
+            continue
+        if stripped.startswith("Type:"):
+            current["type"] = stripped.split(":", 1)[1].strip()
+        elif stripped.startswith("BSD Device Name:"):
+            current["device"] = stripped.split(":", 1)[1].strip()
+        elif stripped.startswith("IPv4 Addresses:"):
+            current["ipv4"] = stripped.split(":", 1)[1].strip()
+        elif stripped.startswith("Addresses:") and current["ipv4"] == "---":
+            current["ipv4"] = stripped.split(":", 1)[1].strip()
+    if current:
+        sections.append(current)
+    return sections
+
+
 def state_cell(value, width=8):
     label = truncate_text(value, width).ljust(width)
     return colorize_state(label)
@@ -305,12 +355,30 @@ def check_first_run():
 
 def show_hardware():
     core_config.clear_screen()
-    print(f"{C}=== HARDWARE INVENTORY (system_profiler) ==={RESET}\n")
+    print(f"{C}================================================================{RESET}")
+    print(f"                   {Y}HARDWARE INVENTORY{RESET}")
+    print(f"{C}================================================================{RESET}")
     if not core_utils.command_exists("system_profiler"):
         print(f" {R}[ERROR]{RESET} Missing required command: 'system_profiler'.")
         input("\n Enter...")
         return
-    subprocess.run(["system_profiler", "SPNetworkDataType"])
+
+    print(" [i] Collecting network hardware profile...\n")
+    result = subprocess.run(["system_profiler", "SPNetworkDataType"], capture_output=True, text=True, check=False)
+    sections = parse_macos_network_inventory(result.stdout)
+
+    print(f" {G}>>> HARDWARE SUMMARY{RESET}")
+    print(" ----------------------------------------------------------------")
+    print(f" ADAPTERS:       {len(sections)}")
+    print(f" PHYSICAL:       {sum(1 for item in sections if item['type'] in ('Ethernet', 'AirPort'))}")
+    print(f" VIRTUAL / VPN:  {sum(1 for item in sections if item['type'] not in ('Ethernet', 'AirPort'))}")
+    print(" ----------------------------------------------------------------")
+
+    render_inventory_table(
+        "NETWORK ADAPTERS",
+        ["NAME", "TYPE", "DEVICE", "IPV4"],
+        [(item["name"], item["type"], item["device"], item["ipv4"]) for item in sections],
+    )
     input("\n Enter...")
 
 

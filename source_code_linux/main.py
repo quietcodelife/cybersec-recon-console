@@ -123,6 +123,34 @@ def pad_ansi(value, width):
     return value + (" " * (width - visible))
 
 
+def render_inventory_table(title, headers, rows):
+    print(f"\n {G}>>> {title}{RESET}")
+    print(" ----------------------------------------------------------------")
+    widths = [len(header) for header in headers]
+    for row in rows:
+        for index, value in enumerate(row):
+            widths[index] = max(widths[index], len(str(value)))
+    widths = [min(width, 28) for width in widths]
+    header_line = " " + " ".join(f"{headers[index]:<{widths[index]}}" for index in range(len(headers)))
+    print(header_line)
+    print(" " + "-" * min(sum(widths) + len(widths) - 1, 96))
+    if not rows:
+        print(" No data.")
+        return
+    for row in rows:
+        print(" " + " ".join(f"{truncate_text(value, widths[index]):<{widths[index]}}" for index, value in enumerate(row)))
+
+
+def parse_linux_inventory_lines(output, source_label):
+    rows = []
+    for line in output.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        rows.append((source_label, stripped))
+    return rows
+
+
 def state_cell(value, width=8):
     label = truncate_text(value, width).ljust(width)
     return colorize_state(label)
@@ -321,17 +349,28 @@ def check_first_run():
 
 def show_hardware():
     core_config.clear_screen()
-    print(f"{C}=== HARDWARE INVENTORY (lspci / lsusb) ==={RESET}\n")
+    print(f"{C}================================================================{RESET}")
+    print(f"                   {Y}HARDWARE INVENTORY{RESET}")
+    print(f"{C}================================================================{RESET}")
     missing = core_utils.missing_commands("lspci", "lsusb")
     if missing:
         print(f" {R}[ERROR]{RESET} Missing required system tools: {', '.join(missing)}")
         input("\n Enter...")
         return
-    print(" [PCI Devices]")
-    subprocess.run(["/bin/sh", "-c", "lspci | grep -i net"])
-    print("\n [USB Devices]")
-    subprocess.run(["/bin/sh", "-c", "lsusb | grep -i -E 'net|wifi|wlan|ethernet'"])
-    print("-" * 40)
+
+    print(" [i] Collecting network hardware profile...\n")
+    pci_output = subprocess.run(["/bin/sh", "-c", "lspci | grep -i net"], capture_output=True, text=True).stdout
+    usb_output = subprocess.run(["/bin/sh", "-c", "lsusb | grep -i -E 'net|wifi|wlan|ethernet'"], capture_output=True, text=True).stdout
+    rows = parse_linux_inventory_lines(pci_output, "PCI") + parse_linux_inventory_lines(usb_output, "USB")
+
+    print(f" {G}>>> HARDWARE SUMMARY{RESET}")
+    print(" ----------------------------------------------------------------")
+    print(f" DETECTED ITEMS: {len(rows)}")
+    print(f" PCI MATCHES:    {len(parse_linux_inventory_lines(pci_output, 'PCI'))}")
+    print(f" USB MATCHES:    {len(parse_linux_inventory_lines(usb_output, 'USB'))}")
+    print(" ----------------------------------------------------------------")
+
+    render_inventory_table("NETWORK HARDWARE", ["SOURCE", "DETAIL"], rows)
     input("\n Enter...")
 
 
