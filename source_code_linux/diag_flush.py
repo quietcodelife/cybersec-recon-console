@@ -1,24 +1,42 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import subprocess, time, core_config
+import subprocess
+
+import core_config
+
+C, Y, G, R, RESET = "\033[96m", "\033[93m", "\033[92m", "\033[91m", "\033[0m"
+
 
 def run():
     core_config.clear_screen()
-    print(" [!] Flushing DNS cache (systemd-resolved)...")
-    cmds = [
+    print(f"{C}================================================================{RESET}")
+    print(f"                    {Y}DNS CACHE FLUSH{RESET}")
+    print(f"{C}================================================================{RESET}")
+    print(" [i] Refreshing local resolver cache...\n")
+
+    commands = [
         "resolvectl flush-caches",
         "systemd-resolve --flush-caches",
-        "service nscd restart"
+        "service nscd restart",
     ]
-    
-    done = False
-    for c in cmds:
+
+    executed = None
+    for command in commands:
         try:
-            if subprocess.call(c, shell=True, stderr=subprocess.DEVNULL) == 0:
-                print(f" [OK] Executed: {c.split()[0]}")
-                done = True
+            if subprocess.call(command, shell=True, stderr=subprocess.DEVNULL) == 0:
+                executed = command
                 break
-        except: pass
-    
-    if not done: print(" [i] No local DNS cache service was found (this can be normal on Linux).")
-    time.sleep(1.5)
+        except Exception:
+            pass
+
+    print(f" {G}>>> FLUSH SUMMARY{RESET}")
+    print(" ----------------------------------------------------------------")
+    if executed:
+        print(" STATUS:         SUCCESS")
+        print(" METHOD:         Automatic fallback chain")
+        print(f" ACTION:         {executed}")
+    else:
+        print(" STATUS:         NOT APPLICABLE")
+        print(" DETAILS:        No supported local DNS cache service was detected.")
+
+    input("\n Enter...")

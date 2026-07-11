@@ -147,20 +147,134 @@ def render_arp_table(title, rows):
         )
 
 
+def render_interface_summary_table(rows):
+    print(f"\n {G}>>> INTERFACE SNAPSHOT{RESET}")
+    print(" ----------------------------------------------------------------")
+    print(f" {'NAME':<10} {'STATE':<10} {'IPV4':<18} {'SPEED':<12}")
+    print(" " + "-" * 56)
+    if not rows:
+        print(" No data.")
+        return
+    for row in rows:
+        print(
+            f" {truncate(row['name'], 10):<10} "
+            f"{truncate(row['state'], 10):<10} "
+            f"{truncate(row['ip'], 18):<18} "
+            f"{truncate(row['speed'], 12):<12}"
+        )
+
+
+def collect_macos_dns_servers(output):
+    servers = []
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("nameserver[") and ":" in stripped:
+            value = stripped.split(":", 1)[1].strip()
+            if value and value not in servers:
+                servers.append(value)
+    return servers
+
+
+def collect_macos_default_routes(output):
+    ipv4 = None
+    ipv6 = []
+    in_ipv6 = False
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped == "Internet6:":
+            in_ipv6 = True
+            continue
+        if not stripped:
+            continue
+        if not in_ipv6 and stripped.startswith("default"):
+            parts = stripped.split()
+            if len(parts) >= 4:
+                ipv4 = {"gateway": parts[1], "interface": parts[3]}
+        elif in_ipv6 and stripped.startswith("default"):
+            parts = stripped.split()
+            if len(parts) >= 4:
+                ipv6.append({"gateway": parts[1], "interface": parts[3]})
+    return ipv4, ipv6
+
+
 def run_ipconfig():
     core_config.clear_screen()
-    print(" [!] Collecting full network configuration (ifconfig, route, dns)...")
+    print(f"{C}================================================================{RESET}")
+    print(f"                  {Y}INTERFACE CENSUS{RESET}")
+    print(f"{C}================================================================{RESET}")
+    print(" [i] Collecting full network configuration...\n")
     if not ensure_commands("ifconfig", "networksetup"):
         return
 
-    cmd = (
-        "echo '--- INTERFEJSY ---'; ifconfig; "
-        "echo '\n--- TRASY ---'; netstat -rn; "
-        "echo '\n--- DNS ---'; scutil --dns"
+    ifconfig_output = subprocess.run(["ifconfig"], capture_output=True, text=True).stdout
+    routes_output = subprocess.run(["netstat", "-rn"], capture_output=True, text=True).stdout
+    dns_output = subprocess.run(["scutil", "--dns"], capture_output=True, text=True).stdout
+
+    adapters = core_config.get_adapters_info()
+    rows = [
+        {
+            "name": name,
+            "state": info.get("status", "---"),
+            "ip": info.get("ip", "---"),
+            "speed": info.get("speed", "---"),
+        }
+        for name, info in sorted(adapters.items(), key=lambda item: (not item[1].get("up", False), item[0]))
+    ]
+    active_count = sum(1 for item in rows if item["state"] == "UP")
+    default_ipv4, default_ipv6 = collect_macos_default_routes(routes_output)
+    dns_servers = collect_macos_dns_servers(dns_output)
+
+    print(f" {G}>>> CENSUS SUMMARY{RESET}")
+    print(" ----------------------------------------------------------------")
+    print(f" PLATFORM:       macOS")
+    print(f" INTERFACES:     {len(rows)} total / {active_count} active")
+    print(
+        f" DEFAULT IPV4:   "
+        f"{default_ipv4['gateway']} via {default_ipv4['interface']}" if default_ipv4 else " DEFAULT IPV4:   No data"
     )
-    res = subprocess.run(cmd, capture_output=True, text=True, shell=True).stdout
-    print(res)
-    core_report.save(res, "IPConfig_All_macOS")
+    print(f" DNS SERVERS:    {len(dns_servers)} discovered")
+    print(" ----------------------------------------------------------------")
+
+    render_interface_summary_table(rows)
+
+    print(f"\n {G}>>> ROUTING SNAPSHOT{RESET}")
+    print(" ----------------------------------------------------------------")
+    if default_ipv4:
+        print(f" IPV4 DEFAULT:   {default_ipv4['gateway']} via {default_ipv4['interface']}")
+    else:
+        print(" IPV4 DEFAULT:   No data")
+    if default_ipv6:
+        for route in default_ipv6[:4]:
+            print(f" IPV6 DEFAULT:   {route['gateway']} via {route['interface']}")
+    else:
+        print(" IPV6 DEFAULT:   No data")
+
+    print(f"\n {G}>>> DNS RESOLVERS{RESET}")
+    print(" ----------------------------------------------------------------")
+    if dns_servers:
+        for server in dns_servers:
+            print(f" - {server}")
+    else:
+        print(" No DNS servers discovered.")
+
+    full_report = "\n".join(
+        [
+            "--- INTERFACES ---",
+            ifconfig_output.strip(),
+            "",
+            "--- ROUTES ---",
+            routes_output.strip(),
+            "",
+            "--- DNS ---",
+            dns_output.strip(),
+        ]
+    )
+
+    if input("\n [1] View raw configuration dump, [Enter] skip: ").strip() == "1":
+        print()
+        print(full_report)
+    if input("\n [?] Save full report? (y/n): ").strip().lower() == "y":
+        core_report.save(full_report, "IPConfig_All_macOS")
     input("\n Enter...")
 
 

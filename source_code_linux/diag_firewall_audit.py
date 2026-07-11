@@ -6,12 +6,27 @@ import core_config
 import core_report
 import core_utils
 
-G, R, C, Y, RESET = '\033[92m', '\033[91m', '\033[96m', '\033[93m', '\033[0m'
+G, R, C, Y, RESET = "\033[92m", "\033[91m", "\033[96m", "\033[93m", "\033[0m"
 
 
 def safe_run(command):
     completed = subprocess.run(command, capture_output=True, text=True, check=False)
     return completed.returncode, completed.stdout.strip() or completed.stderr.strip() or "No data"
+
+
+def print_section(title, code, output):
+    status = "OK" if code == 0 else "WARN"
+    color = G if code == 0 else Y
+    print(f"\n {color}>>> {title} [{status}]{RESET}")
+    print(" ----------------------------------------------------------------")
+    lines = output.splitlines()
+    if lines:
+        for line in lines[:30]:
+            print(line)
+        if len(lines) > 30:
+            print(f"... plus {len(lines) - 30} more lines")
+    else:
+        print("No data.")
 
 
 def run():
@@ -21,63 +36,55 @@ def run():
     print(f"{C}================================================================{RESET}")
 
     sections = []
-
+    engines = []
     if core_utils.command_exists("ufw"):
         code, output = safe_run(["ufw", "status", "verbose"])
         sections.append(("UFW STATUS", code, output))
-
+        engines.append("ufw")
     if core_utils.command_exists("nft"):
         code, output = safe_run(["nft", "list", "ruleset"])
         sections.append(("NFTABLES RULESET", code, output))
-
+        engines.append("nftables")
     if core_utils.command_exists("iptables"):
         code, output = safe_run(["iptables", "-S"])
         sections.append(("IPTABLES RULES", code, output))
+        engines.append("iptables")
 
     if not sections:
-        print(f" {R}[ERROR]{RESET} No supported firewall tools were found (`ufw`, `nft`, `iptables`).")
+        print("\n [ERROR] No supported firewall tools were found (ufw, nft, iptables).")
         input("\n Enter...")
         return
 
     risk_flags = []
-    for title, _, output in sections:
+    for _, _, output in sections:
         lowered = output.lower()
         if "inactive" in lowered:
-            risk_flags.append(f"{title}: firewall appears inactive")
+            risk_flags.append("Firewall appears inactive")
         if "default: allow" in lowered or "policy accept" in lowered:
-            risk_flags.append(f"{title}: default policy may be too permissive")
+            risk_flags.append("Default policy may be too permissive")
 
-    print(f"\n {Y}SUMMARY:{RESET}")
+    print(f"\n {G}>>> AUDIT SUMMARY{RESET}")
+    print(" ----------------------------------------------------------------")
+    print(f" ENGINES:        {', '.join(engines)}")
+    print(f" SECTIONS:       {len(sections)}")
+    print(f" RISK FLAGS:     {len(risk_flags)}")
+    print(" ----------------------------------------------------------------")
+
     if risk_flags:
+        print("\n RISK FLAGS:")
         for flag in risk_flags:
-            print(f"  {R}[FLAG]{RESET} {flag}")
+            print(f" - {flag}")
     else:
-        print(f"  {G}[OK]{RESET} No obvious red flags were detected in this basic audit.")
+        print("\n No obvious high-level firewall red flags were detected.")
 
-    for title, code, output in sections:
-        status = f"{G}OK{RESET}" if code == 0 else f"{Y}WARN{RESET}"
-        print(f"\n {C}--- {title} [{status}] ---{RESET}")
-        lines = output.splitlines()
-        if lines:
-            for line in lines[:40]:
-                print(line)
-            if len(lines) > 40:
-                print(f"... plus {len(lines) - 40} more lines")
-        else:
-            print("No data.")
-
-    report_lines = ["FIREWALL AUDIT", ""]
+    report_lines = ["FIREWALL AUDIT :: Linux", ""]
     if risk_flags:
-        report_lines.append("[FLAGS]")
-        report_lines.extend(risk_flags)
-        report_lines.append("")
+        report_lines.extend(["[Risk Flags]", *risk_flags, ""])
 
     for title, code, output in sections:
-        report_lines.append(f"[{title}] return_code={code}")
-        report_lines.append(output)
-        report_lines.append("")
+        print_section(title, code, output)
+        report_lines.extend([f"[{title}] return_code={code}", output, ""])
 
     if input("\n [?] Save report? (y/n): ").strip().lower() == "y":
-        core_report.save("\n".join(report_lines), "Firewall_Audit")
-
+        core_report.save("\n".join(report_lines), "Firewall_Audit_Linux")
     input("\n Enter...")

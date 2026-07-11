@@ -532,8 +532,8 @@ def main():
         except KeyboardInterrupt:
             sys.exit()
         except Exception as exc:
-            print(f"Error: {exc}")
-            input("Enter...")
+            print(f"\n {R}[ERROR]{RESET} {exc}")
+            input("\n Enter...")
 
 
 if __name__ == "__main__":

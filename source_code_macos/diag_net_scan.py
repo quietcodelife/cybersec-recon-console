@@ -9,9 +9,11 @@ import core_mac_lookup
 import core_utils
 import db_wol
 
+C, Y, G, R, RESET = "\033[96m", "\033[93m", "\033[92m", "\033[91m", "\033[0m"
 
-def wake_up_ip(ip):
-    subprocess.run(["ping", "-c", "1", "-t", "1", ip], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def wake_up_ip(ip_addr):
+    subprocess.run(["ping", "-c", "1", "-t", "1", ip_addr], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def get_local_ip_prefix():
@@ -34,55 +36,71 @@ def parse_arp_table(prefix):
         parts = line.split()
         if len(parts) < 4:
             continue
-        ip = parts[1].strip("()")
+        ip_addr = parts[1].strip("()")
         mac = parts[3].upper()
-        if not ip.startswith(prefix):
+        if not ip_addr.startswith(prefix) or mac in ("(INCOMPLETE)", "INCOMPLETE"):
             continue
-        if mac in ("(INCOMPLETE)", "INCOMPLETE"):
-            continue
-        vendor = core_mac_lookup.get_vendor(mac)
-        found.append({"ip": ip, "mac": mac, "vendor": vendor})
+        found.append({"ip": ip_addr, "mac": mac, "vendor": core_mac_lookup.get_vendor(mac)})
     return found
 
 
 def run():
     core_config.clear_screen()
+    print(f"{C}================================================================{RESET}")
+    print(f"                      {Y}LAN RECON{RESET}")
+    print(f"{C}================================================================{RESET}")
+
     missing = core_utils.missing_commands("ping", "arp")
     if missing:
-        print(f" [ERROR] Missing required system tools: {', '.join(missing)}")
+        print(f"\n [ERROR] Missing required system tools: {', '.join(missing)}")
         input("\n Enter...")
         return
 
     prefix = get_local_ip_prefix()
-    print(f" [*] Scanning network {prefix}0/24 (ARP + ping sweep for macOS)...")
+    print(f" [i] Scanning local network segment {prefix}0/24 ...\n")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
-        list(executor.map(wake_up_ip, [f"{prefix}{i}" for i in range(1, 255)]))
+        list(executor.map(wake_up_ip, [f"{prefix}{idx}" for idx in range(1, 255)]))
 
     found = parse_arp_table(prefix)
-    print(f"\n {'ID':<4} | {'IP':<15} | {'MAC ADDRESS':<18} | {'VENDOR'}")
-    print("-" * 80)
+
+    print(f" {G}>>> DISCOVERY SUMMARY{RESET}")
+    print(" ----------------------------------------------------------------")
+    print(f" TARGET RANGE:    {prefix}0/24")
+    print(f" HOSTS FOUND:     {len(found)}")
+    print(" ----------------------------------------------------------------")
+
+    print(f"\n {'ID':<4} {'IP ADDRESS':<16} {'MAC ADDRESS':<18} {'VENDOR'}")
+    print(" ---------------------------------------------------------------------------")
     for idx, item in enumerate(found, 1):
-        print(f" [{idx:02}] | {item['ip']:<15} | {item['mac']:<18} | {item['vendor'][:30]}")
+        print(f" [{idx:02}] {item['ip']:<16} {item['mac']:<18} {item['vendor'][:32]}")
 
     if not found:
-        print(" [i] No hosts were detected in the ARP table.")
+        print(" No local hosts were discovered during neighbor collection.")
+        input("\n Enter...")
+        return
 
-    print("\n [A] Add to WOL database   [0] Back")
-    choice = input("\n Selection: ").lower().strip()
+    print("\n [A] Add discovered host to Wake-on-LAN vault")
+    print(" [0] Back")
+    choice = input("\n Selection: ").strip().lower()
     if choice != "a":
         return
 
     try:
-        selected = int(input(" Device ID: ")) - 1
+        selected = int(input(" Device ID: ").strip()) - 1
         if 0 <= selected < len(found):
             target = found[selected]
-            name = input(f" Name (Enter={target['vendor'][:10]}): ").strip() or target["vendor"][:10]
-            pwd = input(" Password: ").strip()
-            db = db_wol.load_wol_profiles()
-            db.append([name, target["mac"], target["ip"], pwd if pwd else "-"])
-            db_wol.save_wol_profiles(db)
-            print(" [OK] Added.")
+            name = input(f" Asset label [{target['vendor'][:12]}]: ").strip() or target["vendor"][:12]
+            note = input(" Note / credential hint: ").strip()
+            database = db_wol.load_wol_profiles()
+            database.append([name, target["mac"], target["ip"], note if note else "-"])
+            db_wol.save_wol_profiles(database)
+            print(f"\n {G}>>> VAULT UPDATE{RESET}")
+            print(" ----------------------------------------------------------------")
+            print(f" STATUS:         SUCCESS")
+            print(f" TARGET:         {name}")
+            print(f" MAC:            {target['mac']}")
+            print(f" ADDRESS:        {target['ip']}")
             time.sleep(1)
     except Exception:
         pass

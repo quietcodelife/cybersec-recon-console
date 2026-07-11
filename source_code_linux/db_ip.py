@@ -75,9 +75,9 @@ def normalize_profile(profile):
     while len(normalized) < 6:
         normalized.append("-")
     normalized[0] = normalized[0].strip() or "Profile"
-    normalized[1] = validate_optional_ipv4(normalized[1], "Adres IP")
+    normalized[1] = validate_optional_ipv4(normalized[1], "IP address")
     normalized[2] = validate_mask(normalized[2])
-    normalized[3] = validate_optional_ipv4(normalized[3], "Brama")
+    normalized[3] = validate_optional_ipv4(normalized[3], "Gateway")
     normalized[4] = validate_optional_ipv4(normalized[4], "DNS 1")
     normalized[5] = validate_optional_ipv4(normalized[5], "DNS 2")
     return normalized
@@ -100,8 +100,16 @@ def upsert_profile(profile):
 
 def print_header(profiles, mode):
     fname = os.path.basename(DB_PATH)
-    print(f"{C}=== PROFILE VAULT :: IP ADDRESSING ({fname}) ==={RESET}")
-    print(" Stored IPv4 configurations for fast restore on selected interfaces.\n")
+    print(f"{C}================================================================{RESET}")
+    print(f"            {Y}PROFILE VAULT :: IP ADDRESSING{RESET}")
+    print(f"{C}================================================================{RESET}")
+    print(f" [i] Storage file: {fname}")
+    print(" [i] Saved IPv4 configurations for fast restore on selected interfaces.\n")
+    print(f" {G}>>> VAULT SUMMARY{RESET}")
+    print(" ----------------------------------------------------------------")
+    print(f" PROFILES:       {len(profiles)}")
+    print(f" MODE:           {'Selection' if mode == 'SELECT' else 'Management'}")
+    print(" ----------------------------------------------------------------\n")
 
     header = f" {'ID':<3} | {'NAME':<16} | {'IP':<15} | {'MASK':<15} | {'GATEWAY':<15} | {'DNS 1':<15}"
     print(header)
@@ -189,7 +197,7 @@ def manual_input_profile(old_data=None):
     current = old_data if old_data else ["Office-LAN", "", "255.255.255.0", "-", "1.1.1.1", "8.8.8.8"]
 
     while True:
-        print(f"\n{Y}--- IPV4 PROFILE WIZARD ---{RESET}")
+        print(f"\n {Y}>>> IPV4 PROFILE WIZARD{RESET}")
         print(" Press Enter to keep the current value, or `0` to cancel.\n")
 
         name = input(f" Profile name [{current[0]}]: ").strip() or current[0]
@@ -229,7 +237,7 @@ def manual_input_profile(old_data=None):
             return None
 
         try:
-            ip_value = validate_optional_ipv4(ip_value, "Adres IP")
+            ip_value = validate_optional_ipv4(ip_value, "IP address")
             mask = validate_mask(mask)
             gateway = validate_optional_ipv4(gateway, "Gateway")
             dns1 = validate_optional_ipv4(dns1, "DNS 1")
@@ -239,4 +247,12 @@ def manual_input_profile(old_data=None):
             time.sleep(1.5)
             continue
 
+        print(f"\n {G}>>> PROFILE PREVIEW{RESET}")
+        print(" ----------------------------------------------------------------")
+        print(f" NAME:           {name}")
+        print(f" IP ADDRESS:     {ip_value}")
+        print(f" SUBNET MASK:    {mask}")
+        print(f" GATEWAY:        {gateway}")
+        print(f" DNS 1:          {dns1}")
+        print(f" DNS 2:          {dns2}")
         return [name, ip_value, mask, gateway, dns1, dns2]

@@ -7,8 +7,8 @@ import core_config
 import core_report
 import core_utils
 
-
 AIRPORT_BIN = "/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport"
+C, Y, G, R, RESET = "\033[96m", "\033[93m", "\033[92m", "\033[91m", "\033[0m"
 
 
 def find_wifi_device():
@@ -34,8 +34,7 @@ def list_preferred_networks(device):
         output = subprocess.check_output(["networksetup", "-listpreferredwirelessnetworks", device], text=True)
     except Exception as exc:
         return [f"Failed to read preferred network list: {exc}"]
-    lines = output.splitlines()[1:]
-    return [line.strip() for line in lines if line.strip()]
+    return [line.strip() for line in output.splitlines()[1:] if line.strip()]
 
 
 def run_airport_scan():
@@ -48,7 +47,6 @@ def run_airport_scan():
 
 
 def read_wifi_password(ssid):
-    ssid = (ssid or "").strip()
     if not ssid:
         return "Keychain password lookup was skipped."
     try:
@@ -58,69 +56,66 @@ def read_wifi_password(ssid):
             stderr=subprocess.STDOUT,
         ).strip()
     except subprocess.CalledProcessError as exc:
-        output = (exc.output or "").strip()
-        return output or "Failed to read password from Keychain."
+        return (exc.output or "").strip() or "Failed to read password from Keychain."
     except Exception as exc:
         return f"Keychain lookup error: {exc}"
 
 
 def run():
     core_config.clear_screen()
-    print("=" * 60)
-    print("         WIFI SECURITY AUDITOR (macOS)")
-    print("=" * 60)
+    print(f"{C}================================================================{RESET}")
+    print(f"                {Y}WIFI SECURITY AUDITOR (macOS){RESET}")
+    print(f"{C}================================================================{RESET}")
 
     device = find_wifi_device()
     if not device:
-        print(" [!] No Wi-Fi interface was detected by networksetup.")
+        print("\n [ERROR] No Wi-Fi interface was detected by networksetup.")
         input("\n Enter...")
         return
 
     preferred = list_preferred_networks(device)
     airport_scan = run_airport_scan()
 
-    print(f" [i] Wi-Fi interface: {device}\n")
-    print(" PREFERRED NETWORKS:")
-    print("-" * 60)
+    print(f"\n [i] Wi-Fi interface: {device}")
+    print(f"\n {G}>>> PREFERRED NETWORKS{RESET}")
+    print(" ----------------------------------------------------------------")
     if preferred:
         for ssid in preferred:
             print(f" - {ssid}")
     else:
         print(" No saved preferred networks.")
 
-    print("\n AIRPORT SCAN:")
-    print("-" * 60)
+    print(f"\n {G}>>> AIRPORT SCAN{RESET}")
+    print(" ----------------------------------------------------------------")
     print(airport_scan)
 
-    print("\n KEYCHAIN LOOKUP:")
-    print("-" * 60)
-    print(" You can now enter an SSID from the preferred networks list to try")
-    print(" reading the saved password from Keychain.")
-    selected_ssid = input("\n [optional] Enter SSID for password lookup or press Enter to skip: ").strip()
+    print(f"\n {G}>>> KEYCHAIN LOOKUP{RESET}")
+    print(" ----------------------------------------------------------------")
+    print(" Pick an SSID from the preferred network list if you want to check")
+    print(" whether a saved password is available in Keychain.")
+    selected_ssid = input("\n SSID for password lookup (optional, Enter to skip): ").strip()
     keychain_result = read_wifi_password(selected_ssid)
 
-    print("\n KEYCHAIN NOTE:")
-    print("-" * 60)
-    if selected_ssid:
-        print(f" SSID: {selected_ssid}")
-        print(keychain_result)
-    else:
-        print(" Skip the lookup or provide a specific SSID the next time you run this module.")
+    print(f"\n {G}>>> KEYCHAIN RESULT{RESET}")
+    print(" ----------------------------------------------------------------")
+    print(f" SSID:           {selected_ssid or '-'}")
+    print(f" RESULT:         {keychain_result}")
 
-    report = "\n".join([
-        f"Wi-Fi device: {device}",
-        "",
-        "[Preferred Networks]",
-        *preferred,
-        "",
-        "[Airport Scan]",
-        airport_scan,
-        "",
-        "[Keychain Lookup]",
-        f"SSID: {selected_ssid or '-'}",
-        keychain_result,
-    ])
-    if input("\n Save report? (y/n): ").lower().strip() == "y":
+    report = "\n".join(
+        [
+            f"Wi-Fi device: {device}",
+            "",
+            "[Preferred Networks]",
+            *preferred,
+            "",
+            "[Airport Scan]",
+            airport_scan,
+            "",
+            "[Keychain Lookup]",
+            f"SSID: {selected_ssid or '-'}",
+            keychain_result,
+        ]
+    )
+    if input("\n [?] Save report? (y/n): ").strip().lower() == "y":
         core_report.save(report, "WiFi_Audit_macOS")
-
     input("\n Enter...")

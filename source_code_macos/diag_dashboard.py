@@ -27,6 +27,7 @@ def run():
             core_config.clear_screen()
             ping_ms = get_live_ping()
             adapters = core_config.get_adapters_info()
+            active_count = sum(1 for info in adapters.values() if info["status"] == "UP")
 
             if ping_ms == -1:
                 ping_state = f"{R}NO CONNECTIVITY / TIMEOUT{RESET}"
@@ -40,17 +41,23 @@ def run():
             print(f"{C}================================================================{RESET}")
             print(f"                  {Y}OPERATIONS DASHBOARD{RESET}")
             print(f"{C}================================================================{RESET}")
-            print(f" HOSTNAME: {C}{hostname}{RESET}")
-            print(f" STATUS WAN: {ping_state}")
-            print(f"{C}----------------------------------------------------------------{RESET}")
-            print(f" {Y}INTERFACES SNAPSHOT:{RESET}\n")
+            print(f" {G}>>> RUNTIME SUMMARY{RESET}")
+            print(" ----------------------------------------------------------------")
+            print(f" HOSTNAME:       {hostname}")
+            print(f" WAN STATUS:     {ping_state}")
+            print(f" INTERFACES:     {len(adapters)} total / {active_count} active")
+            print(" ----------------------------------------------------------------")
+            print(f"\n {G}>>> INTERFACE SNAPSHOT{RESET}")
+            print(" ----------------------------------------------------------------")
+            print(f" {'NAME':<12} {'STATE':<10} {'IPV4':<18} {'SPEED':<12}")
+            print(" " + "-" * 58)
 
             for name in sorted(adapters.keys()):
                 info = adapters[name]
                 status = f"{G}UP{RESET}" if info["status"] == "UP" else f"{R}DOWN{RESET}"
-                print(f"  > {C}{name:<12}{RESET} | STATUS: {status:<16} | IP: {Y}{info['ip']}{RESET} | SPEED: {info['speed']}")
+                print(f" {name:<12} {status:<10} {info['ip']:<18} {info['speed']:<12}")
 
-            print(f"\n {C}Auto-refresh enabled. Press {R}Ctrl+C{RESET}{C} to exit.{RESET}")
+            print(f"\n {Y}[i]{RESET} Auto-refresh enabled. Press {R}Ctrl+C{RESET} to return.")
             time.sleep(1.5)
         except KeyboardInterrupt:
             print(f"\n {G}[i] Closing dashboard. Returning to the menu...{RESET}")

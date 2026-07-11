@@ -1,8 +1,9 @@
 import os
-import time
-import subprocess
-import socket
 import re
+import socket
+import subprocess
+import time
+
 import core_config
 
 G, R, C, Y, RESET = '\033[92m', '\033[91m', '\033[96m', '\033[93m', '\033[0m'
@@ -55,46 +56,21 @@ def format_speed(bytes_per_sec):
         return f"{bytes_per_sec:>6.0f} B/s "
 
 def run():
-    os.system('clear')
+    core_config.clear_screen()
     print(f"{C}================================================================{RESET}")
-    print(f"               {Y}DASHBOARD CONFIGURATION{RESET}")
+    print(f"                  {Y}OPERATIONS DASHBOARD{RESET}")
     print(f"{C}================================================================{RESET}")
-    
+
     adapters = core_config.get_adapters_info()
     iface_names = list(adapters.keys())
-    
     if not iface_names:
-        print(f" {R}[!] No network interfaces were detected on this system.{RESET}")
+        print(f"\n [ERROR] No network interfaces were detected on this system.")
         time.sleep(2)
         return
 
-    print(f" {Y}Select interfaces to monitor:{RESET}\n")
-    for i, name in enumerate(iface_names, 1):
-        st = f"{G}UP{RESET}" if adapters[name]['status'] == "UP" else f"{R}DOWN{RESET}"
-        print(f" [{G}{i}{RESET}] {name:<25} ({st})")
-        
-    print(f"\n [{G}0{RESET}] All active interfaces (auto-detect)")
-    
-    choices = input("\n Selection (for example 1 or 1,3 or 0): ").strip()
-    selected_adapters = []
-    
-    if choices == '0' or not choices:
-        selected_adapters = iface_names 
-    else:
-        for c in choices.split(','):
-            try:
-                idx = int(c.strip()) - 1
-                if 0 <= idx < len(iface_names):
-                    selected_adapters.append(iface_names[idx])
-            except: pass
-                
-    if not selected_adapters:
-        selected_adapters = iface_names 
-        
-    os.system('clear')
-    print(f"\n {C}Initializing dashboard...{RESET}")
-    print(f" {Y}Collecting initial interface data...{RESET}")
-    
+    print(" [i] Monitoring active interfaces automatically.")
+    print(" [i] Use Ctrl+C to return to the main console.\n")
+
     hostname = socket.gethostname()
     prev_data = get_adapters_data()
     last_time = time.time()
@@ -108,53 +84,70 @@ def run():
             p = get_live_ping()
             net_data = get_adapters_data()
             
-            if p == -1: ping_str = f"{R}NO INTERNET (Timeout){RESET}"
-            elif p < 40: ping_str = f"{G}{p} ms (Excellent){RESET}"
-            elif p < 100: ping_str = f"{Y}{p} ms (Moderate){RESET}"
-            else: ping_str = f"{R}{p} ms (High){RESET}"
+            if p == -1:
+                ping_str = f"{R}NO INTERNET / TIMEOUT{RESET}"
+            elif p < 40:
+                ping_str = f"{G}{p} ms (LOW RTT){RESET}"
+            elif p < 100:
+                ping_str = f"{Y}{p} ms (MEDIUM RTT){RESET}"
+            else:
+                ping_str = f"{R}{p} ms (HIGH RTT){RESET}"
 
-            os.system('clear')
+            core_config.clear_screen()
             print(f"{C}================================================================{RESET}")
-            print(f"              {Y}GLOBAL DASHBOARD (REAL-TIME MONITOR){RESET}")
+            print(f"                  {Y}OPERATIONS DASHBOARD{RESET}")
             print(f"{C}================================================================{RESET}")
-            
-            print(f" NAZWA HOSTA: {C}{hostname}{RESET}")
-            print(f" WAN STATUS:  {ping_str}")
-            print(f"{C}----------------------------------------------------------------{RESET}")
-            print(f" {Y}NETWORK TRAFFIC AND IP ADDRESSES (selected interfaces):{RESET}\n")
-            
+            active_adapters = [name for name, info in adapters.items() if info["status"] == "UP"]
+            print(f" {G}>>> RUNTIME SUMMARY{RESET}")
+            print(" ----------------------------------------------------------------")
+            print(f" HOSTNAME:       {hostname}")
+            print(f" WAN STATUS:     {ping_str}")
+            print(f" INTERFACES:     {len(adapters)} total / {len(active_adapters)} active")
+            print(" ----------------------------------------------------------------")
+
+            print(f"\n {G}>>> INTERFACE SNAPSHOT{RESET}")
+            print(" ----------------------------------------------------------------")
+            print(f" {'NAME':<12} {'IPV4':<16} {'RX LIVE':<12} {'TX LIVE':<12} {'RX TOTAL':<10} {'TX TOTAL':<10}")
+            print(" " + "-" * 82)
+
             has_data = False
-            for name in selected_adapters:
+            for name in iface_names:
                 info = net_data.get(name, {})
                 prev_info = prev_data.get(name, {})
                 
-                ip = info.get('ip', 'No IP (Disconnected)')
+                ip = info.get('ip', '---')
                 rx_bytes = info.get('rx', 0)
                 tx_bytes = info.get('tx', 0)
                 
                 prev_rx = prev_info.get('rx', rx_bytes)
                 prev_tx = prev_info.get('tx', tx_bytes)
-                
-                if choices in ['0', ''] and rx_bytes == 0 and tx_bytes == 0 and 'No IP' in ip:
-                    continue 
-                    
-                has_data = True
-                
+
                 rx_speed = max(0, (rx_bytes - prev_rx) / delta_t) if delta_t > 0 else 0
                 tx_speed = max(0, (tx_bytes - prev_tx) / delta_t) if delta_t > 0 else 0
-                
+
                 rx_total_mb = rx_bytes / 1024 / 1024
                 tx_total_mb = tx_bytes / 1024 / 1024
-                
-                print(f"  > {C}{name[:22]:<22}{RESET} | IP: {Y}{ip:<15}{RESET}")
-                print(f"    {'Speed (Live):':<22} | ↓ {format_speed(rx_speed):<10} | ↑ {format_speed(tx_speed)}")
-                print(f"    {'Total Traffic:':<22} | ↓ {rx_total_mb:>6.1f} MB   | ↑ {tx_total_mb:>6.1f} MB\n")
-                
+
+                status = adapters.get(name, {}).get("status", "DOWN")
+                if status == "UP" or rx_bytes or tx_bytes or ip != "No IP":
+                    has_data = True
+
+                if status != "UP" and rx_bytes == 0 and tx_bytes == 0 and ip in ("---", "No IP"):
+                    continue
+
+                print(
+                    f" {name[:12]:<12} "
+                    f"{ip[:16]:<16} "
+                    f"{format_speed(rx_speed):<12} "
+                    f"{format_speed(tx_speed):<12} "
+                    f"{rx_total_mb:>7.1f} MB "
+                    f"{tx_total_mb:>7.1f} MB"
+                )
+
             if not has_data:
-                print(f"  {R}> No active data available to display (interfaces disconnected?).{RESET}")
-                
-            print(f"{C}----------------------------------------------------------------{RESET}")
-            print(f" Auto-refresh enabled. Press {R}[Ctrl+C]{RESET} to exit.")
+                print(" No active interface telemetry is currently available.")
+
+            print(f"\n {Y}[i]{RESET} Auto-refresh enabled. Press {R}Ctrl+C{RESET} to return.")
 
             prev_data = net_data
             last_time = current_time
