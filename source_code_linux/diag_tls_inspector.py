@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 import socket
 import ssl
+import tempfile
 import urllib.parse
+import ipaddress
 from datetime import datetime, timezone
 
 import core_report
@@ -38,7 +40,64 @@ def format_name(entries):
 
 
 def parse_cert_time(value):
+    if not value:
+        return None
     return datetime.strptime(value, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
+
+
+def decode_peer_cert(der_bytes):
+    if not der_bytes:
+        return {}
+
+    pem_data = ssl.DER_cert_to_PEM_cert(der_bytes)
+    with tempfile.NamedTemporaryFile("w", suffix=".pem") as temp_cert:
+        temp_cert.write(pem_data)
+        temp_cert.flush()
+        return ssl._ssl._test_decode_cert(temp_cert.name)
+
+
+def dns_name_matches(host, pattern):
+    host = (host or "").strip().lower().rstrip(".")
+    pattern = (pattern or "").strip().lower().rstrip(".")
+    if not host or not pattern:
+        return False
+    if "*" not in pattern:
+        return host == pattern
+    if not pattern.startswith("*."):
+        return False
+
+    suffix = pattern[2:]
+    if not suffix or host == suffix or not host.endswith(f".{suffix}"):
+        return False
+
+    host_labels = host.split(".")
+    suffix_labels = suffix.split(".")
+    return len(host_labels) == len(suffix_labels) + 1
+
+
+def certificate_matches_host(cert, host):
+    try:
+        ipaddress.ip_address(host)
+        is_ip = True
+    except ValueError:
+        is_ip = False
+
+    san_entries = cert.get("subjectAltName", [])
+    dns_sans = [value for key, value in san_entries if key == "DNS"]
+    ip_sans = [value for key, value in san_entries if key == "IP Address"]
+
+    if is_ip:
+        if ip_sans:
+            return host in ip_sans
+    else:
+        if dns_sans:
+            return any(dns_name_matches(host, pattern) for pattern in dns_sans)
+
+    subject = format_name(cert.get("subject", []))
+    common_name = subject.get("commonName", "")
+    if is_ip:
+        return host == common_name
+    return dns_name_matches(host, common_name)
 
 
 def collect_tls_profile(host, port, verify_tls=True):
@@ -46,6 +105,8 @@ def collect_tls_profile(host, port, verify_tls=True):
     with socket.create_connection((host, port), timeout=8) as raw_sock:
         with ctx.wrap_socket(raw_sock, server_hostname=host) as tls_sock:
             cert = tls_sock.getpeercert()
+            if not cert:
+                cert = decode_peer_cert(tls_sock.getpeercert(binary_form=True))
             cipher = tls_sock.cipher()
             tls_version = tls_sock.version()
             negotiated_alpn = tls_sock.selected_alpn_protocol()
@@ -122,32 +183,35 @@ def run():
             subject_name = subject.get("commonName", "Unknown")
             serial_number = cert.get("serialNumber", "No data")
 
-            not_before = parse_cert_time(cert["notBefore"])
-            not_after = parse_cert_time(cert["notAfter"])
+            not_before = parse_cert_time(cert.get("notBefore"))
+            not_after = parse_cert_time(cert.get("notAfter"))
             now = datetime.now(timezone.utc)
-            days_left = (not_after - now).days
-            age_days = max(0, (now - not_before).days)
+            days_left = (not_after - now).days if not_after else None
+            age_days = max(0, (now - not_before).days) if not_before else None
 
             dns_sans = [value for key, value in cert.get("subjectAltName", []) if key == "DNS"]
             ip_sans = [value for key, value in cert.get("subjectAltName", []) if key == "IP Address"]
             self_signed = issuer == subject
 
-            try:
-                ssl.match_hostname(cert, host)
-                hostname_match = True
-            except Exception:
-                hostname_match = False
+            hostname_match = certificate_matches_host(cert, host)
 
-            risk_flags = assess_risk(days_left, self_signed, hostname_match, result["tls_version"], port)
+            risk_flags = assess_risk(days_left if days_left is not None else 9999, self_signed, hostname_match, result["tls_version"], port)
 
-            if days_left < 0:
+            if days_left is None:
+                validity_state = f"{Y}UNKNOWN{RESET}"
+                validity_text = "Unknown"
+            elif days_left < 0:
                 validity_state = f"{R}EXPIRED{RESET}"
+                validity_text = f"{days_left} days left"
             elif days_left < 15:
                 validity_state = f"{R}CRITICAL{RESET}"
+                validity_text = f"{days_left} days left"
             elif days_left < 45:
                 validity_state = f"{Y}WARNING{RESET}"
+                validity_text = f"{days_left} days left"
             else:
                 validity_state = f"{G}VALID{RESET}"
+                validity_text = f"{days_left} days left"
 
             print(f"\n {G}>>> TLS CERTIFICATE SUMMARY{RESET}")
             print(" ----------------------------------------------------------------")
@@ -157,10 +221,10 @@ def run():
             print(f" SUBJECT:        {subject_name}")
             print(f" ISSUER:         {issuer_name}")
             print(f" SERIAL:         {serial_number}")
-            print(f" VALID FROM:     {not_before.strftime('%Y-%m-%d %H:%M:%S')} UTC")
-            print(f" VALID UNTIL:    {not_after.strftime('%Y-%m-%d %H:%M:%S')} UTC")
-            print(f" STATUS:         {validity_state} ({days_left} days left)")
-            print(f" CERT AGE:       {age_days} days")
+            print(f" VALID FROM:     {not_before.strftime('%Y-%m-%d %H:%M:%S') + ' UTC' if not_before else 'No data'}")
+            print(f" VALID UNTIL:    {not_after.strftime('%Y-%m-%d %H:%M:%S') + ' UTC' if not_after else 'No data'}")
+            print(f" STATUS:         {validity_state} ({validity_text})")
+            print(f" CERT AGE:       {str(age_days) + ' days' if age_days is not None else 'No data'}")
             print(f" HOSTNAME MATCH: {G if hostname_match else R}{'YES' if hostname_match else 'NO'}{RESET}")
             print(f" SELF-SIGNED:    {R if self_signed else G}{'YES' if self_signed else 'NO'}{RESET}")
             print(f" TLS VERSION:    {Y}{result['tls_version'] or 'Unknown'}{RESET}")
@@ -185,10 +249,10 @@ def run():
                 f"Subject: {subject_name}",
                 f"Issuer: {issuer_name}",
                 f"Serial: {serial_number}",
-                f"Valid From: {not_before.isoformat()}",
-                f"Valid Until: {not_after.isoformat()}",
-                f"Days Left: {days_left}",
-                f"Certificate Age Days: {age_days}",
+                f"Valid From: {not_before.isoformat() if not_before else 'No data'}",
+                f"Valid Until: {not_after.isoformat() if not_after else 'No data'}",
+                f"Days Left: {days_left if days_left is not None else 'No data'}",
+                f"Certificate Age Days: {age_days if age_days is not None else 'No data'}",
                 f"Hostname Match: {'YES' if hostname_match else 'NO'}",
                 f"Self-Signed: {'YES' if self_signed else 'NO'}",
                 f"TLS Version: {result['tls_version'] or 'Unknown'}",
