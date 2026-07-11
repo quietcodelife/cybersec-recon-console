@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import socket
+import ssl
 import urllib.parse
 import urllib.request
 import urllib.error
@@ -24,13 +25,31 @@ def normalize_domain(raw_value):
     return domain.lstrip("*.") if domain.startswith("*.") else domain
 
 
-def fetch_hostsearch(domain):
+def fetch_hostsearch(domain, verify_tls=True):
+    ssl_ctx = ssl.create_default_context() if verify_tls else ssl._create_unverified_context()
+    opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ssl_ctx))
     request = urllib.request.Request(
         f"https://api.hackertarget.com/hostsearch/?q={domain}",
         headers={"User-Agent": "CyberSec-Recon-Console/1.0"},
     )
-    with urllib.request.urlopen(request, timeout=15) as response:
-        return response.read().decode("utf-8", errors="replace")
+    with opener.open(request, timeout=15) as response:
+        return {
+            "body": response.read().decode("utf-8", errors="replace"),
+            "tls_verified": verify_tls,
+            "source_url": response.geturl(),
+        }
+
+
+def safe_fetch_hostsearch(domain):
+    tls_note = None
+    try:
+        return fetch_hostsearch(domain, verify_tls=True), tls_note
+    except urllib.error.URLError as exc:
+        reason = getattr(exc, "reason", None)
+        if isinstance(reason, ssl.SSLCertVerificationError):
+            tls_note = f"TLS validation failed for passive source: {reason}"
+            return fetch_hostsearch(domain, verify_tls=False), tls_note
+        raise
 
 
 def parse_hostsearch(text, domain):
@@ -73,7 +92,8 @@ def run():
             domain = normalize_domain(target)
             print(f"\n [i] Querying passive subdomain source for {domain}...")
 
-            raw_data = fetch_hostsearch(domain)
+            result, tls_note = safe_fetch_hostsearch(domain)
+            raw_data = result["body"]
             subdomains = parse_hostsearch(raw_data, domain)
             resolved = resolve_sample(subdomains)
 
@@ -81,7 +101,12 @@ def run():
             print(" ----------------------------------------------------------------")
             print(f" DOMAIN:         {domain}")
             print(f" DISCOVERED:     {len(subdomains)}")
+            print(f" TLS VERIFY:     {G + 'OK' + RESET if result['tls_verified'] else Y + 'BYPASS / UNVERIFIED' + RESET}")
             print(" ----------------------------------------------------------------")
+
+            if tls_note:
+                print(f" {Y}[TLS NOTICE]{RESET} {tls_note}")
+                print(f" {Y}[TLS NOTICE]{RESET} Passive collection continued in unverified certificate mode.")
 
             print(f"\n {Y}DISCOVERED SUBDOMAINS:{RESET}")
             if subdomains:
@@ -95,6 +120,8 @@ def run():
             report_lines = [
                 f"SUBDOMAIN RECON: {domain}",
                 f"Discovered: {len(subdomains)}",
+                f"TLS Verify: {'OK' if result['tls_verified'] else 'BYPASS / UNVERIFIED'}",
+                f"Passive Source URL: {result['source_url']}",
                 "",
                 "[Resolved Sample]",
                 *([f"{host} -> {ip_addr}" for host, ip_addr in resolved] or ["No sample available"]),
@@ -102,6 +129,8 @@ def run():
                 "[Discovered Subdomains]",
                 *([f"{host},{ip_addr}" for host, ip_addr in subdomains] or ["No passive subdomains discovered"]),
             ]
+            if tls_note:
+                report_lines.extend(["", f"TLS Notice: {tls_note}"])
 
             if input("\n [?] Save report? (y/n): ").strip().lower() == "y":
                 core_report.save("\n".join(report_lines), "Subdomain_Recon")
