@@ -37,6 +37,7 @@ OPTIONAL_MODULES = [
     "diag_wifi_monitor",
     "diag_dns_bench",
     "diag_dashboard",
+    "diag_dns_telemetry",
     "diag_ssl",
     "diag_tls_inspector",
     "diag_http_recon",
@@ -402,6 +403,7 @@ def build_actions():
         "c": lambda: run_module_action("diag_subnet", "run"),
         "ct": lambda: run_module_action("diag_ct_recon", "run"),
         "d": lambda: run_module_action("diag_dns", "run"),
+        "dt": lambda: run_module_action("diag_dns_telemetry", "run"),
         "e": lambda: run_module_action("diag_dashboard", "run"),
         "f": lambda: run_module_action("diag_flush", "run"),
         "fw": lambda: run_module_action("diag_firewall_audit", "run"),
@@ -501,6 +503,7 @@ def main():
 
             telemetry_entries = [
                 ("B", "Bandwidth Telemetry - live interface throughput"),
+                ("DT", "DNS Telemetry - resolver timing and answer consistency"),
                 ("E", "Operations Dashboard - real-time host view"),
                 ("G", "GeoIP Footprint - public IP geolocation"),
                 ("IH", "Interface Health Snapshot - gateway, DNS and reachability posture"),
