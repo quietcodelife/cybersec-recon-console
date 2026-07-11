@@ -69,6 +69,22 @@ def classify_status(status_code, body_text):
     return "Unhandled response"
 
 
+def classify_finding_type(status_code, classification):
+    if status_code == 200:
+        return "accessible"
+    if status_code in (401, 403):
+        return "restricted"
+    if classification == "Redirected":
+        return "redirected"
+    return "observed"
+
+
+def display_label(label, finding_type):
+    if finding_type == "restricted":
+        return label.replace("exposure", "restricted path").replace("discovery", "restricted path")
+    return label
+
+
 def fetch_path(url, verify_tls=True):
     ssl_ctx = ssl.create_default_context() if verify_tls else ssl._create_unverified_context()
     opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ssl_ctx))
@@ -150,6 +166,7 @@ def run():
                                 "content_length": result["content_length"] or "No data",
                                 "title": result["title"] or "No title",
                                 "classification": result["classification"],
+                                "finding_type": classify_finding_type(result["status"], result["classification"]),
                                 "tls_verified": result["tls_verified"],
                             }
                         )
@@ -167,17 +184,24 @@ def run():
                                 "content_length": "No data",
                                 "title": "No title",
                                 "classification": "Access controlled" if exc.code in (401, 403) else "HTTP error",
+                                "finding_type": "restricted" if exc.code in (401, 403) else "observed",
                                 "tls_verified": True,
                             }
                         )
                 except urllib.error.URLError:
                     continue
 
+            accessible_findings = [item for item in findings if item["finding_type"] == "accessible"]
+            restricted_findings = [item for item in findings if item["finding_type"] == "restricted"]
+            other_findings = [item for item in findings if item["finding_type"] not in ("accessible", "restricted")]
+
             print(f"\n {G}>>> EXPOSURE SUMMARY{RESET}")
             print(" ----------------------------------------------------------------")
             print(f" TARGET:         {base_url}")
             print(f" CHECKLIST:      {len(EXPOSURE_PATHS)} paths")
             print(f" FINDINGS:       {len(findings)}")
+            print(f" ACCESSIBLE:     {len(accessible_findings)}")
+            print(f" RESTRICTED:     {len(restricted_findings)}")
             print(" ----------------------------------------------------------------")
 
             if tls_notices:
@@ -187,9 +211,12 @@ def run():
 
             if findings:
                 for finding in findings:
-                    print(f"\n {risk_label(finding['severity'])} {finding['label']}")
+                    heading = display_label(finding["label"], finding["finding_type"])
+                    prefix = risk_label(finding["severity"]) if finding["finding_type"] == "accessible" else f"{C}INFO{RESET}"
+                    print(f"\n {prefix} {heading}")
                     print(f" Path:           /{finding['path'].lstrip('/')}")
                     print(f" Status:         {finding['status']}")
+                    print(f" Finding Type:   {finding['finding_type'].replace('_', ' ').title()}")
                     print(f" Classification: {finding['classification']}")
                     print(f" Content-Type:   {finding['content_type']}")
                     print(f" Content-Length: {finding['content_length']}")
@@ -206,6 +233,8 @@ def run():
                 f"DIRECTORY EXPOSURE RECON: {base_url}",
                 f"Checklist size: {len(EXPOSURE_PATHS)}",
                 f"Findings: {len(findings)}",
+                f"Accessible findings: {len(accessible_findings)}",
+                f"Restricted findings: {len(restricted_findings)}",
             ]
             for notice in tls_notices:
                 report_lines.append(f"TLS Warning: {notice}")
@@ -213,9 +242,10 @@ def run():
                 report_lines.extend(
                     [
                         "",
-                        f"[{finding['severity'].upper()}] {finding['label']}",
+                        f"[{finding['finding_type'].upper()}] {display_label(finding['label'], finding['finding_type'])}",
                         f"Path: /{finding['path'].lstrip('/')}",
                         f"Status: {finding['status']}",
+                        f"Finding Type: {finding['finding_type']}",
                         f"Classification: {finding['classification']}",
                         f"Content-Type: {finding['content_type']}",
                         f"Content-Length: {finding['content_length']}",

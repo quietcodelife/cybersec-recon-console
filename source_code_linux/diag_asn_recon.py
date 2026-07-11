@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import ipaddress
+import re
 import socket
 
 import core_report
@@ -19,6 +20,29 @@ REQUEST_HEADERS = {
     "User-Agent": "CyberSec-Recon-Console/1.0",
     "Accept": "application/json",
 }
+
+
+def summarize_source_error(error_text):
+    value = str(error_text or "").strip()
+    lowered = value.lower()
+    if "failed to resolve" in lowered or "nameresolutionerror" in lowered:
+        return "DNS resolution failed while contacting the upstream source."
+    if "max retries exceeded" in lowered:
+        return "The upstream source did not respond after repeated attempts."
+    if value.startswith("HTTP "):
+        return f"Upstream source returned {value}."
+    return value
+
+
+def is_noise_remark(value):
+    text = str(value or "").strip()
+    if not text:
+        return True
+    if "BEGIN CERTIFICATE" in text or "END CERTIFICATE" in text:
+        return True
+    if len(text) > 180 and re.fullmatch(r"[A-Za-z0-9+/=\- ]+", text):
+        return True
+    return False
 
 
 def resolve_target(raw_target):
@@ -43,17 +67,23 @@ def resolve_target(raw_target):
 
 def fetch_json(url):
     if requests is None:
-        return None
-    response = requests.get(url, headers=REQUEST_HEADERS, timeout=8)
+        return None, "The requests module is unavailable."
+    try:
+        response = requests.get(url, headers=REQUEST_HEADERS, timeout=8)
+    except requests.RequestException as exc:
+        return None, str(exc)
     if response.status_code != 200:
-        return None
-    return response.json()
+        return None, f"HTTP {response.status_code}"
+    try:
+        return response.json(), None
+    except ValueError:
+        return None, "Invalid JSON response"
 
 
 def fetch_bgpview(ip_value):
-    payload = fetch_json(BGPVIEW_URL.format(ip=ip_value))
+    payload, error = fetch_json(BGPVIEW_URL.format(ip=ip_value))
     if not payload:
-        return {}
+        return {}, error
 
     data = payload.get("data", {})
     prefixes = data.get("prefixes") or []
@@ -70,7 +100,7 @@ def fetch_bgpview(ip_value):
         "prefix_name": prefix_entry.get("name", "") or "",
         "country": data.get("country_code", "") or "",
         "rir": rir_name,
-    }
+    }, None
 
 
 def extract_country_from_entities(entities):
@@ -86,9 +116,9 @@ def extract_country_from_entities(entities):
 
 
 def fetch_rdap(ip_value):
-    payload = fetch_json(RDAP_URL.format(ip=ip_value))
+    payload, error = fetch_json(RDAP_URL.format(ip=ip_value))
     if not payload:
-        return {}
+        return {}, error
 
     start = payload.get("startAddress", "") or ""
     end = payload.get("endAddress", "") or ""
@@ -101,7 +131,7 @@ def fetch_rdap(ip_value):
     for item in payload.get("remarks", []) or []:
         for line in item.get("description", []) or []:
             cleaned = str(line).strip()
-            if cleaned and cleaned not in remarks:
+            if cleaned and cleaned not in remarks and not is_noise_remark(cleaned):
                 remarks.append(cleaned)
 
     return {
@@ -112,7 +142,7 @@ def fetch_rdap(ip_value):
         "network_type": network_type,
         "country": country,
         "remarks": remarks[:4],
-    }
+    }, None
 
 
 def classify_provider(profile_text):
@@ -137,8 +167,8 @@ def classify_provider(profile_text):
 
 
 def merge_profile(ip_value):
-    bgp_profile = fetch_bgpview(ip_value)
-    rdap_profile = fetch_rdap(ip_value)
+    bgp_profile, bgp_error = fetch_bgpview(ip_value)
+    rdap_profile, rdap_error = fetch_rdap(ip_value)
 
     profile_text = " ".join(
         filter(
@@ -152,6 +182,12 @@ def merge_profile(ip_value):
             ],
         )
     )
+
+    source_notes = []
+    if bgp_error:
+        source_notes.append(f"BGPView unavailable: {summarize_source_error(bgp_error)}")
+    if rdap_error:
+        source_notes.append(f"RDAP unavailable: {summarize_source_error(rdap_error)}")
 
     return {
         "ip": ip_value,
@@ -169,6 +205,7 @@ def merge_profile(ip_value):
         "end": rdap_profile.get("end", ""),
         "remarks": rdap_profile.get("remarks", []),
         "provider_guess": classify_provider(profile_text),
+        "source_notes": source_notes,
     }
 
 
@@ -219,6 +256,10 @@ def run():
                 print(f" COUNTRY:        {format_value(profile['country'])}")
                 print(f" RIR:            {format_value(profile['rir'])}")
                 print(f" PROVIDER GUESS: {format_value(profile['provider_guess'])}")
+                if profile["source_notes"]:
+                    print(" SOURCE NOTES:")
+                    for note in profile["source_notes"]:
+                        print(f"  - {note}")
                 if profile["remarks"]:
                     print(" REMARKS:")
                     for remark in profile["remarks"]:
@@ -248,6 +289,8 @@ def run():
                         f"Provider Guess: {profile['provider_guess'] or 'No data'}",
                     ]
                 )
+                for note in profile["source_notes"]:
+                    report_lines.append(f"Source Note: {note}")
                 for remark in profile["remarks"]:
                     report_lines.append(f"Remark: {remark}")
 

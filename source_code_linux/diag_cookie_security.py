@@ -11,6 +11,35 @@ import core_utils
 
 G, R, C, Y, RESET = "\033[92m", "\033[91m", "\033[96m", "\033[93m", "\033[0m"
 
+TRACKING_KEYWORDS = [
+    "ga",
+    "gid",
+    "gcl",
+    "utm",
+    "visit",
+    "stat",
+    "track",
+    "analytics",
+    "pixel",
+    "consent",
+    "ab",
+    "tab",
+    "sgv",
+]
+
+SESSION_KEYWORDS = [
+    "sess",
+    "session",
+    "auth",
+    "token",
+    "jwt",
+    "login",
+    "csrf",
+    "sid",
+    "phpsessid",
+    "jsessionid",
+]
+
 
 class CaptureRedirectHandler(urllib.request.HTTPRedirectHandler):
     def __init__(self):
@@ -91,11 +120,22 @@ def parse_set_cookie(raw_cookie):
     }
 
 
+def classify_cookie_purpose(cookie):
+    name = cookie["name"].lower()
+    combined = " ".join([name, cookie["raw"].lower()])
+
+    if any(keyword in combined for keyword in SESSION_KEYWORDS):
+        return "Session / Authentication"
+    if any(keyword in combined for keyword in TRACKING_KEYWORDS):
+        return "Analytics / Tracking"
+    return "General"
+
+
 def evaluate_cookie(cookie, parsed_target):
     attributes = cookie["attributes"]
     flags = cookie["flags"]
     issues = []
-    score = 0
+    score = 20
 
     secure = "secure" in flags
     httponly = "httponly" in flags
@@ -104,16 +144,22 @@ def evaluate_cookie(cookie, parsed_target):
     path_attr = attributes.get("path", "")
     expires_attr = attributes.get("expires", "")
     max_age_attr = attributes.get("max-age", "")
+    purpose = classify_cookie_purpose(cookie)
+    is_tracking_cookie = purpose == "Analytics / Tracking"
+    is_session_cookie = purpose == "Session / Authentication"
 
     if secure:
-        score += 25
+        score += 20
     else:
         issues.append("Missing Secure flag")
 
     if httponly:
-        score += 25
+        score += 20 if is_session_cookie else 10
     else:
-        issues.append("Missing HttpOnly flag")
+        if is_session_cookie:
+            issues.append("Missing HttpOnly flag on a session-oriented cookie")
+        elif not is_tracking_cookie:
+            issues.append("Missing HttpOnly flag")
 
     if samesite:
         normalized_samesite = samesite.lower()
@@ -122,7 +168,7 @@ def evaluate_cookie(cookie, parsed_target):
         elif normalized_samesite == "lax":
             score += 20
         elif normalized_samesite == "none":
-            score += 10
+            score += 15 if secure else 5
             if not secure:
                 issues.append("SameSite=None without Secure flag")
         else:
@@ -136,8 +182,8 @@ def evaluate_cookie(cookie, parsed_target):
         if clean_domain == host:
             score += 10
         else:
-            score += 4
-            issues.append(f"Broad Domain scope: {domain_attr}")
+            score += 7
+            issues.append(f"Review Domain scope: {domain_attr}")
     else:
         score += 10
 
@@ -177,6 +223,7 @@ def evaluate_cookie(cookie, parsed_target):
         "domain": domain_attr or "Host-only",
         "path": path_attr or "No explicit path",
         "persistence": persistence,
+        "purpose": purpose,
         "score": score,
         "posture": posture,
         "issues": issues,
@@ -194,7 +241,7 @@ def summarize_profiles(profiles):
         findings.append("No Set-Cookie headers were returned by the target.")
         recommendations.append("No cookie hardening review was possible because no cookies were observed.")
         return {
-            "average_score": 0,
+            "average_score": None,
             "grade": "N/A",
             "findings": findings,
             "recommendations": recommendations,
@@ -222,7 +269,7 @@ def summarize_profiles(profiles):
         recommendations.append("Set HttpOnly on cookies that are not required in client-side JavaScript.")
     if any(profile["samesite"] == "Missing" for profile in profiles):
         recommendations.append("Define SameSite explicitly to reduce CSRF exposure.")
-    if any("Broad Domain scope" in issue for profile in profiles for issue in profile["issues"]):
+    if any("Review Domain scope" in issue for profile in profiles for issue in profile["issues"]):
         recommendations.append("Reduce cookie Domain scope where subdomain sharing is not required.")
     if any("Long-lived cookie expiration" in issue for profile in profiles for issue in profile["issues"]):
         recommendations.append("Shorten persistent cookie lifetime for sensitive sessions.")
@@ -285,7 +332,8 @@ def run():
             print(f" INITIAL URL:    {parsed_target.geturl()}")
             print(f" FINAL URL:      {result['final_url']}")
             print(f" STATUS:         {result['status']}")
-            print(f" SCORE:          {summary['average_score']}/100")
+            score_label = f"{summary['average_score']}/100" if summary["average_score"] is not None else "Not applicable"
+            print(f" SCORE:          {score_label}")
             print(f" GRADE:          {summary['grade']}")
             print(f" COOKIES:        {len(profiles)}")
             print(f" TLS VERIFY:     {G + 'OK' + RESET if result['tls_verified'] else Y + 'BYPASS / UNVERIFIED' + RESET}")
@@ -306,6 +354,7 @@ def run():
                 for profile in profiles:
                     print(f"\n  {profile['name']}  [{profile['posture']}]")
                     print(f"   Score:        {profile['score']}/100")
+                    print(f"   Purpose:      {profile['purpose']}")
                     print(f"   Value:        {profile['value_preview']}")
                     print(f"   Secure:       {'Yes' if profile['secure'] else 'No'}")
                     print(f"   HttpOnly:     {'Yes' if profile['httponly'] else 'No'}")
@@ -328,7 +377,7 @@ def run():
                 f"COOKIE SECURITY AUDIT: {parsed_target.geturl()}",
                 f"Final URL: {result['final_url']}",
                 f"Status: {result['status']}",
-                f"Score: {summary['average_score']}/100",
+                f"Score: {score_label}",
                 f"Grade: {summary['grade']}",
                 f"Cookies Observed: {len(profiles)}",
                 f"TLS Verify: {'OK' if result['tls_verified'] else 'BYPASS / UNVERIFIED'}",
@@ -351,6 +400,7 @@ def run():
                         f"[Cookie] {profile['name']}",
                         f"Score: {profile['score']}/100",
                         f"Posture: {profile['posture']}",
+                        f"Purpose: {profile['purpose']}",
                         f"Secure: {'Yes' if profile['secure'] else 'No'}",
                         f"HttpOnly: {'Yes' if profile['httponly'] else 'No'}",
                         f"SameSite: {profile['samesite']}",

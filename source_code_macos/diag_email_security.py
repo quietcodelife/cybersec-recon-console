@@ -20,6 +20,11 @@ COMMON_DKIM_SELECTORS = [
     "smtp",
     "mandrill",
     "amazonses",
+    "protonmail",
+    "protonmail2",
+    "protonmail3",
+    "pm",
+    "mx",
 ]
 
 
@@ -36,8 +41,9 @@ def query_record(name, record_type):
 def parse_mx_records(output):
     records = []
     patterns = [
+        r"mail exchanger = \d+\s+([^\s]+)",
+        r"MX preference = \d+,\s*mail exchanger = ([^\s]+)",
         r"mail exchanger = ([^\s]+)",
-        r"MX preference = \d+, mail exchanger = ([^\s]+)",
     ]
     for line in output.splitlines():
         cleaned = line.strip().rstrip(".")
@@ -45,8 +51,11 @@ def parse_mx_records(output):
             match = re.search(pattern, cleaned, re.IGNORECASE)
             if match:
                 value = match.group(1).rstrip(".")
+                if value.isdigit():
+                    continue
                 if value not in records:
                     records.append(value)
+                break
     return records
 
 
