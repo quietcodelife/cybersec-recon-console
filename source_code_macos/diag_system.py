@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import re
 import subprocess
 
 import core_config
 import core_report
 import core_utils
+
+G, R, C, Y, RESET = "\033[92m", "\033[91m", "\033[96m", "\033[93m", "\033[0m"
 
 
 def ensure_commands(*command_names):
@@ -14,6 +17,90 @@ def ensure_commands(*command_names):
         input("\n Enter...")
         return False
     return True
+
+
+def truncate(value, width):
+    value = str(value or "").strip()
+    if len(value) <= width:
+        return value
+    return value[: width - 3] + "..."
+
+
+def render_connection_table(title, rows):
+    print(f"\n {G}>>> {title}{RESET}")
+    print(" ----------------------------------------------------------------")
+    print(f" {'PROTO':<6} {'STATE':<12} {'LOCAL':<24} {'REMOTE':<24} {'PROCESS':<24} {'PID':<6}")
+    print(" " + "-" * 100)
+    if not rows:
+        print(" No data.")
+        return
+
+    for row in rows:
+        print(
+            f" {truncate(row['proto'], 6):<6} "
+            f"{truncate(row['state'], 12):<12} "
+            f"{truncate(row['local'], 24):<24} "
+            f"{truncate(row['remote'], 24):<24} "
+            f"{truncate(row['process'], 24):<24} "
+            f"{truncate(row['pid'], 6):<6}"
+        )
+
+
+def parse_lsof_records(output):
+    records = []
+    current = {}
+    for line in output.splitlines():
+        if not line:
+            continue
+        field = line[0]
+        value = line[1:]
+        if field == "p":
+            if current:
+                records.append(current)
+            current = {"pid": value, "process": "Unknown", "name": "", "state": "Unknown"}
+        elif field == "c":
+            current["process"] = value
+        elif field == "n":
+            current["name"] = value
+        elif field == "T" and value.startswith("ST="):
+            current["state"] = value.split("=", 1)[1]
+    if current:
+        records.append(current)
+    return records
+
+
+def split_endpoint(name):
+    cleaned = (name or "").strip()
+    cleaned = re.sub(r"\s+\((?:LISTEN|ESTABLISHED|CLOSED)\)$", "", cleaned)
+    if "->" in cleaned:
+        local, remote = cleaned.split("->", 1)
+        return local, remote
+    return cleaned, "*"
+
+
+def collect_macos_connections(established_only=True):
+    state = "ESTABLISHED" if established_only else "LISTEN"
+    result = subprocess.run(
+        ["lsof", "-nP", "-iTCP", f"-sTCP:{state}", "-F", "pcnT"],
+        capture_output=True,
+        text=True,
+    )
+    records = parse_lsof_records(result.stdout)
+    rows = []
+    for record in records:
+        local, remote = split_endpoint(record.get("name", ""))
+        rows.append(
+            {
+                "proto": "tcp",
+                "state": record.get("state", state),
+                "local": local or "*",
+                "remote": remote if not established_only else remote or "*",
+                "process": record.get("process", "Unknown"),
+                "pid": record.get("pid", "-"),
+            }
+        )
+    rows.sort(key=lambda item: (item["process"].lower(), item["local"], item["remote"]))
+    return rows
 
 
 def run_ipconfig():
@@ -36,30 +123,39 @@ def run_ipconfig():
 def run_netstat():
     while True:
         core_config.clear_screen()
-        print("=== CONNECTION MONITOR (netstat) ===\n")
-        print(" [1] Active TCP connections only")
+        print(f"{C}================================================================{RESET}")
+        print(f"                      {Y}SESSION AUDIT{RESET}")
+        print(f"{C}================================================================{RESET}")
+        print(" [1] Active TCP connections")
         print(" [2] Listening ports")
         print(" [0] Back")
-        if not ensure_commands("netstat"):
+        if not ensure_commands("lsof"):
             return
 
         c = input("\n Selection: ")
         if c == "0":
             break
+        if c not in ("1", "2"):
+            continue
 
         core_config.clear_screen()
-        if c == "1":
-            cmd = "netstat -anv -p tcp | grep ESTABLISHED"
-        else:
-            cmd = "netstat -anv | grep LISTEN"
+        established_only = c == "1"
+        title = "ACTIVE TCP CONNECTIONS" if established_only else "LISTENING PORTS"
+        rows = collect_macos_connections(established_only=established_only)
+        render_connection_table(title, rows)
 
-        res = subprocess.run(cmd, capture_output=True, text=True, shell=True).stdout
-        print("-" * 80)
-        print(res or "No data.")
-        print("-" * 80)
+        report_lines = [
+            f"SESSION AUDIT ({'ACTIVE TCP CONNECTIONS' if established_only else 'LISTENING PORTS'})",
+            "",
+            "PROTO | STATE | LOCAL | REMOTE | PROCESS | PID",
+            *[
+                f"{row['proto']} | {row['state']} | {row['local']} | {row['remote']} | {row['process']} | {row['pid']}"
+                for row in rows
+            ],
+        ]
 
         if input("\n [?] Save report? (y/n): ").lower() == "y":
-            core_report.save(res or "No data.", "Netstat_macOS")
+            core_report.save("\n".join(report_lines), "Session_Audit_macOS")
         input("\n Enter...")
 
 
