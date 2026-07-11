@@ -3,6 +3,7 @@
 import getpass
 import os
 import platform
+import re
 import socket
 import subprocess
 
@@ -31,6 +32,21 @@ def safe_run(command):
         return f"Error: {exc}"
 
 
+def truncate(value, width):
+    value = str(value or "").strip()
+    if len(value) <= width:
+        return value
+    return value[: width - 3] + "..."
+
+
+def display_fqdn(hostname):
+    fqdn = socket.getfqdn(hostname)
+    lowered = fqdn.lower()
+    if lowered.endswith(".ip6.arpa") or lowered.endswith(".in-addr.arpa"):
+        return hostname
+    return fqdn or hostname
+
+
 def read_os_release():
     path = "/etc/os-release"
     if not os.path.exists(path):
@@ -55,6 +71,52 @@ def get_listening_ports():
     if core_utils.command_exists("netstat"):
         return safe_run(["netstat", "-tulpn"])
     return "Neither ss nor netstat is available."
+
+
+def parse_ip_brief(output):
+    rows = []
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        row = (
+            {
+                "name": parts[0],
+                "state": parts[1],
+                "ipv4": next((item for item in parts[2:] if "." in item), "---"),
+            }
+        )
+        is_noise = row["name"].startswith(("lo", "docker", "br-", "veth", "tun", "tap"))
+        is_operational = row["ipv4"] != "---" or row["state"].upper() == "UP"
+        if is_operational and not is_noise:
+            rows.append(row)
+    return rows
+
+
+def parse_ss_line(line):
+    parts = line.split(None, 5)
+    if len(parts) < 5:
+        return None
+
+    process = "Unknown"
+    pid = "-"
+    if len(parts) > 5:
+        proc_part = parts[5]
+        name_match = re.search(r'"([^"]+)"', proc_part)
+        pid_match = re.search(r"pid=(\d+)", proc_part)
+        if name_match:
+            process = name_match.group(1)
+        if pid_match:
+            pid = pid_match.group(1)
+
+    return {
+        "proto": parts[0],
+        "state": parts[1],
+        "local": parts[3],
+        "remote": parts[4],
+        "process": process,
+        "pid": pid,
+    }
 
 
 def get_users():
@@ -82,7 +144,7 @@ def run():
     print(" [i] Collecting local host data...\n")
 
     hostname = socket.gethostname()
-    fqdn = socket.getfqdn()
+    fqdn = display_fqdn(hostname)
     current_user = getpass.getuser()
     os_name = read_os_release()
     kernel = platform.release()
@@ -96,6 +158,16 @@ def run():
     logged_users = get_users()
     listening_ports = get_listening_ports()
     ip_summary = safe_run(["ip", "-brief", "address"]) if core_utils.command_exists("ip") else "The 'ip' command is unavailable."
+    interface_rows = parse_ip_brief(ip_summary) if "unavailable" not in ip_summary.lower() else []
+    socket_rows = []
+    if listening_ports and "available" not in listening_ports.lower():
+        for line in listening_ports.splitlines():
+            parsed = parse_ss_line(line)
+            if parsed and not (parsed["state"] == "UNCONN" and parsed["process"] == "Unknown"):
+                socket_rows.append(parsed)
+    priority = {"ESTAB": 0, "LISTEN": 1, "UNCONN": 2}
+    socket_rows.sort(key=lambda item: (priority.get(item["state"], 9), item["process"].lower(), item["local"]))
+    socket_rows = socket_rows[:18]
 
     print(f" HOSTNAME:        {C}{hostname}{RESET}")
     print(f" FQDN:            {C}{fqdn}{RESET}")
@@ -113,18 +185,36 @@ def run():
     print(f"\n {Y}LOGGED USERS:{RESET}")
     print(logged_users if logged_users else "No active sessions.")
 
-    print(f"\n {Y}INTERFACES:{RESET}")
-    print(ip_summary)
+    print(f"\n {G}>>> INTERFACE SUMMARY{RESET}")
+    print(" ----------------------------------------------------------------")
+    print(f" {'NAME':<10} {'STATE':<12} {'IPV4':<20}")
+    print(" " + "-" * 46)
+    for row in interface_rows:
+        effective_state = "ACTIVE" if row["ipv4"] != "---" or row["state"].upper() == "UP" else row["state"]
+        state_color = G if effective_state == "ACTIVE" else Y
+        print(
+            f" {truncate(row['name'], 10):<10} "
+            f"{state_color}{truncate(effective_state, 12):<12}{RESET} "
+            f"{truncate(row['ipv4'], 20):<20}"
+        )
+    if not interface_rows:
+        print(" No interface data available.")
 
-    print(f"\n {Y}LISTENING PORTS:{RESET}")
-    lines = listening_ports.splitlines()
-    if lines:
-        for line in lines[:25]:
-            print(line)
-        if len(lines) > 25:
-            print(f"... plus {len(lines) - 25} more lines")
-    else:
-        print("No data.")
+    print(f"\n {G}>>> SOCKET SNAPSHOT{RESET}")
+    print(" ----------------------------------------------------------------")
+    print(f" {'PROTO':<6} {'STATE':<12} {'LOCAL':<24} {'REMOTE':<24} {'PROCESS':<20} {'PID':<6}")
+    print(" " + "-" * 96)
+    for row in socket_rows:
+        print(
+            f" {truncate(row['proto'], 6):<6} "
+            f"{truncate(row['state'], 12):<12} "
+            f"{truncate(row['local'], 24):<24} "
+            f"{truncate(row['remote'], 24):<24} "
+            f"{truncate(row['process'], 20):<20} "
+            f"{truncate(row['pid'], 6):<6}"
+        )
+    if not socket_rows:
+        print(" No socket data available.")
 
     report_lines = [
         f"LOCAL HOST AUDIT :: {hostname}",
@@ -144,11 +234,17 @@ def run():
         "[Logged Users]",
         logged_users,
         "",
-        "[Interfaces]",
-        ip_summary,
+        "[Interface Summary]",
+        *[
+            f"{row['name']} | {row['state']} | {row['ipv4']}"
+            for row in interface_rows
+        ],
         "",
-        "[Listening Ports]",
-        listening_ports,
+        "[Socket Snapshot]",
+        *[
+            f"{row['proto']} | {row['state']} | {row['local']} | {row['remote']} | {row['process']} | {row['pid']}"
+            for row in socket_rows
+        ],
     ])
 
     if input("\n [?] Save report? (y/n): ").strip().lower() == "y":
