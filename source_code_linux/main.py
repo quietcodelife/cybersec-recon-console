@@ -48,6 +48,7 @@ OPTIONAL_MODULES = [
     "diag_email_security",
     "diag_directory_exposure",
     "diag_cookie_security",
+    "diag_cors_review",
     "diag_security_headers",
     "diag_subdomain_recon",
     "diag_local_audit",
@@ -426,6 +427,7 @@ def build_actions():
         "hc": lambda: run_module_action("diag_http_capture", "run"),
         "ea": lambda: run_module_action("diag_email_security", "run"),
         "de": lambda: run_module_action("diag_directory_exposure", "run"),
+        "cr": lambda: run_module_action("diag_cors_review", "run"),
         "cs": lambda: run_module_action("diag_cookie_security", "run"),
         "sh": lambda: run_module_action("diag_security_headers", "run"),
         "rs": lambda: run_module_action("diag_robots_recon", "run"),
@@ -477,6 +479,7 @@ def main():
 
             web_entries = [
                 ("CS", "Cookie Security Audit - flags, scope and persistence review"),
+                ("CR", "CORS Misconfiguration Review - origin reflection and preflight policy"),
                 ("DE", "Directory Exposure Recon - common files and panel discovery"),
                 ("EA", "Email Security Audit - SPF, DMARC, MX and DKIM review"),
                 ("HC", "HTTP Capture - title grab and optional page screenshot"),
