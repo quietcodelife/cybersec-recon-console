@@ -2,6 +2,8 @@
 
 CyberSec Recon Console is a terminal-first toolkit for cybersecurity operators who need fast reconnaissance, local host validation, and web-facing posture review without leaving the shell. It combines practical recon, visibility, and reporting workflows into a single operator console for Linux and macOS.
 
+![CyberSec Recon Console main screen](docs/images/main-console.png)
+
 ## Why This Project Exists
 
 - built for real terminal workflows instead of dashboard-heavy overhead
