@@ -28,6 +28,7 @@ OPTIONAL_MODULES = [
     "diag_whois",
     "diag_bandwidth",
     "diag_interface_health",
+    "diag_http_monitor",
     "diag_banner_grab",
     "diag_asn_recon",
     "core_mac_lookup",
@@ -222,11 +223,13 @@ def print_interface_table(adapters):
         for index, name in enumerate(iface_names, 1)
         if adapters[name].get("status") == "UP"
     ]
+    active_count = len(up_entries)
+    total_count = len(iface_names)
     hidden_count = len(iface_names) - len(up_entries)
 
     print(
         f"\n {C}[ INTERFACES ]{RESET} "
-        f"Showing {G}{len(up_entries)}{RESET}/{G}{len(up_entries)}{RESET} active links. "
+        f"Showing {G}{active_count}{RESET}/{total_count} active links. "
         f"Select a visible number to open interface control."
     )
     print(f" {Y}{'ID':<4} {'INTERFACE':<16} {'STATE':<8} {'IP':<18} {'SPEED'}{RESET}")
@@ -409,6 +412,7 @@ def build_actions():
         "fw": lambda: run_module_action("diag_firewall_audit", "run"),
         "g": lambda: run_module_action("diag_geo_ip", "run"),
         "h": lambda: run_module_action("diag_hosts", "run"),
+        "hm": lambda: run_module_action("diag_http_monitor", "run"),
         "ih": lambda: run_module_action("diag_interface_health", "run"),
         "i": lambda: run_module_action("diag_system", "run_ipconfig"),
         "j": lambda: run_module_action("db_ip", "run_management"),
@@ -506,6 +510,7 @@ def main():
                 ("DT", "DNS Telemetry - resolver timing and answer consistency"),
                 ("E", "Operations Dashboard - real-time host view"),
                 ("G", "GeoIP Footprint - public IP geolocation"),
+                ("HM", "HTTP Reachability Monitor - response time and redirect stability"),
                 ("IH", "Interface Health Snapshot - gateway, DNS and reachability posture"),
                 ("O", "WiFi Telemetry - signal and quality monitor"),
                 ("Q", "DNS Benchmark - compare resolver performance"),
