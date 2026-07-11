@@ -26,6 +26,7 @@ OPTIONAL_MODULES = [
     "diag_port_scan",
     "diag_whois",
     "diag_bandwidth",
+    "diag_interface_health",
     "diag_banner_grab",
     "diag_asn_recon",
     "core_mac_lookup",
@@ -43,6 +44,7 @@ OPTIONAL_MODULES = [
     "diag_robots_recon",
     "diag_email_security",
     "diag_directory_exposure",
+    "diag_client_exposure",
     "diag_cookie_security",
     "diag_cors_review",
     "diag_security_headers",
@@ -409,6 +411,7 @@ def build_actions():
         "fw": lambda: run_module_action("diag_firewall_audit", "run"),
         "g": lambda: run_module_action("diag_geo_ip", "run"),
         "h": lambda: run_module_action("diag_hosts", "run"),
+        "ih": lambda: run_module_action("diag_interface_health", "run"),
         "i": lambda: run_module_action("diag_system", "run_ipconfig"),
         "j": lambda: run_module_action("db_ip", "run_management"),
         "k": lambda: run_module_action("db_wol", "run"),
@@ -428,6 +431,7 @@ def build_actions():
         "hc": lambda: run_module_action("diag_http_capture", "run"),
         "ea": lambda: run_module_action("diag_email_security", "run"),
         "de": lambda: run_module_action("diag_directory_exposure", "run"),
+        "ce": lambda: run_module_action("diag_client_exposure", "run"),
         "cr": lambda: run_module_action("diag_cors_review", "run"),
         "cs": lambda: run_module_action("diag_cookie_security", "run"),
         "sh": lambda: run_module_action("diag_security_headers", "run"),
@@ -471,6 +475,7 @@ def main():
             ]
 
             web_entries = [
+                ("CE", "Client Exposure Recon - public JS, endpoints and service identifiers"),
                 ("CS", "Cookie Security Audit - flags, scope and persistence review"),
                 ("CR", "CORS Misconfiguration Review - origin reflection and preflight policy"),
                 ("DE", "Directory Exposure Recon - common files and panel discovery"),
@@ -491,6 +496,7 @@ def main():
                 ("B", "Bandwidth Telemetry - live interface throughput"),
                 ("E", "Operations Dashboard - real-time host view"),
                 ("G", "GeoIP Footprint - public IP geolocation"),
+                ("IH", "Interface Health Snapshot - gateway, DNS and reachability posture"),
                 ("T", "ICMP Probe - reachability and latency testing"),
             ]
 
