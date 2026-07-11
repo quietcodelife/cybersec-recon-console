@@ -103,6 +103,50 @@ def collect_macos_connections(established_only=True):
     return rows
 
 
+def collect_macos_arp_rows():
+    output = subprocess.run(["arp", "-an"], capture_output=True, text=True).stdout
+    rows = []
+    for line in output.splitlines():
+        match = re.search(r"\(([^)]+)\) at ([^ ]+) on ([^ ]+)", line)
+        if not match:
+            continue
+        ip_addr, mac_addr, interface = match.groups()
+        flags = []
+        if "permanent" in line:
+            flags.append("PERMANENT")
+        if "ethernet" in line:
+            flags.append("ETHERNET")
+        if mac_addr.lower() == "ff:ff:ff:ff:ff:ff":
+            flags.append("BROADCAST")
+        rows.append(
+            {
+                "ip": ip_addr,
+                "mac": mac_addr,
+                "interface": interface,
+                "flags": ", ".join(flags) or "---",
+            }
+        )
+    rows.sort(key=lambda item: (item["interface"], item["ip"]))
+    return rows
+
+
+def render_arp_table(title, rows):
+    print(f"\n {G}>>> {title}{RESET}")
+    print(" ----------------------------------------------------------------")
+    print(f" {'IP ADDRESS':<18} {'MAC ADDRESS':<20} {'INTERFACE':<10} {'FLAGS':<18}")
+    print(" " + "-" * 72)
+    if not rows:
+        print(" No data.")
+        return
+    for row in rows:
+        print(
+            f" {truncate(row['ip'], 18):<18} "
+            f"{truncate(row['mac'], 20):<20} "
+            f"{truncate(row['interface'], 10):<10} "
+            f"{truncate(row['flags'], 18):<18}"
+        )
+
+
 def run_ipconfig():
     core_config.clear_screen()
     print(" [!] Collecting full network configuration (ifconfig, route, dns)...")
@@ -161,10 +205,20 @@ def run_netstat():
 
 def run_arp():
     core_config.clear_screen()
-    print(" [!] Collecting ARP table (arp -an)...")
+    print(f"{C}================================================================{RESET}")
+    print(f"                        {Y}ARP TABLE{RESET}")
+    print(f"{C}================================================================{RESET}")
+    print(" [i] Collecting layer 2 / layer 3 neighbors...\n")
     if not ensure_commands("arp"):
         return
-    res = subprocess.run(["arp", "-an"], capture_output=True, text=True).stdout
-    print(res)
-    core_report.save(res, "ARP_Table_macOS")
+    rows = collect_macos_arp_rows()
+    render_arp_table("ARP NEIGHBORS", rows)
+    report_lines = [
+        "ARP TABLE",
+        "",
+        "IP Address | MAC Address | Interface | Flags",
+        *[f"{row['ip']} | {row['mac']} | {row['interface']} | {row['flags']}" for row in rows],
+    ]
+    if input("\n [?] Save report? (y/n): ").strip().lower() == "y":
+        core_report.save("\n".join(report_lines), "ARP_Table_macOS")
     input("\n Enter...")

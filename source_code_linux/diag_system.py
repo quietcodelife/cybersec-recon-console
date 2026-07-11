@@ -88,6 +88,50 @@ def collect_linux_connections(established_only=True):
     rows.sort(key=lambda item: (item["process"].lower(), item["local"], item["remote"]))
     return rows
 
+
+def collect_linux_arp_rows():
+    output = subprocess.run(["ip", "neigh"], capture_output=True, text=True).stdout
+    rows = []
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        ip_addr = parts[0]
+        interface = parts[2] if len(parts) > 2 else "---"
+        mac_addr = "---"
+        state = parts[-1] if parts else "---"
+        if "lladdr" in parts:
+            lladdr_index = parts.index("lladdr")
+            if lladdr_index + 1 < len(parts):
+                mac_addr = parts[lladdr_index + 1]
+        rows.append(
+            {
+                "ip": ip_addr,
+                "mac": mac_addr,
+                "interface": interface,
+                "flags": state,
+            }
+        )
+    rows.sort(key=lambda item: (item["interface"], item["ip"]))
+    return rows
+
+
+def render_arp_table(title, rows):
+    print(f"\n {G}>>> {title}{RESET}")
+    print(" ----------------------------------------------------------------")
+    print(f" {'IP ADDRESS':<18} {'MAC ADDRESS':<20} {'INTERFACE':<10} {'STATE':<18}")
+    print(" " + "-" * 72)
+    if not rows:
+        print(" No data.")
+        return
+    for row in rows:
+        print(
+            f" {truncate(row['ip'], 18):<18} "
+            f"{truncate(row['mac'], 20):<20} "
+            f"{truncate(row['interface'], 10):<10} "
+            f"{truncate(row['flags'], 18):<18}"
+        )
+
 def run_ipconfig():
     core_config.clear_screen()
     print(" [!] Collecting full network configuration (ip addr, route, dns)...")
@@ -143,10 +187,20 @@ def run_netstat():
 
 def run_arp():
     core_config.clear_screen()
-    print(" [!] Collecting neighbor table (ARP / ip neigh)...")
+    print(f"{C}================================================================{RESET}")
+    print(f"                        {Y}ARP TABLE{RESET}")
+    print(f"{C}================================================================{RESET}")
+    print(" [i] Collecting layer 2 / layer 3 neighbors...\n")
     if not ensure_commands("ip"):
         return
-    res = subprocess.run("ip neigh", capture_output=True, text=True, shell=True).stdout
-    print(res)
-    core_report.save(res, "ARP_Table_Linux")
+    rows = collect_linux_arp_rows()
+    render_arp_table("ARP NEIGHBORS", rows)
+    report_lines = [
+        "ARP TABLE",
+        "",
+        "IP Address | MAC Address | Interface | State",
+        *[f"{row['ip']} | {row['mac']} | {row['interface']} | {row['flags']}" for row in rows],
+    ]
+    if input("\n [?] Save report? (y/n): ").strip().lower() == "y":
+        core_report.save("\n".join(report_lines), "ARP_Table_Linux")
     input("\n Enter...")
